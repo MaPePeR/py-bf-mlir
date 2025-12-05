@@ -23,7 +23,11 @@ RUN DEBIAN_FRONTEND=noninteractive \
         libxml2-dev \
         libxmlsec1-dev \
         libffi-dev \
-        liblzma-dev
+        liblzma-dev \
+        clang \
+        lld \
+        cmake \
+        ninja-build
 
 # Python and poetry installation
 USER $USER
@@ -43,3 +47,21 @@ RUN echo "done 0" \
     && echo "done 3" \
     && curl -sSL https://install.python-poetry.org | python3 - \
     && poetry config virtualenvs.in-project true
+
+
+
+ARG LLVM_VERSION=21.1.6
+
+ADD --chown=vscode:vscode "https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-${LLVM_VERSION}.tar.gz" "${HOME}"
+RUN mkdir ${HOME}/llvm-project \
+    && tar -C ${HOME}/llvm-project -xzf ${HOME}/llvmorg-${LLVM_VERSION}.tar.gz --strip-components=1
+RUN mkdir ${HOME}/llvm-project/build \
+    && cd ${HOME}/llvm-project/build \
+    && cmake -G Ninja ../llvm \
+        -DLLVM_ENABLE_PROJECTS=mlir \
+        -DLLVM_BUILD_EXAMPLES=OFF \
+        -DLLVM_TARGETS_TO_BUILD="Native;NVPTX;AMDGPU" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_ASSERTIONS=ON \ 
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_ENABLE_LLD=ON \
+    && cmake --build . --target check-mlir
