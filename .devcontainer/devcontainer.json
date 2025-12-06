@@ -21,7 +21,8 @@
 		},
 		"features": {
 			"ghcr.io/jungaretti/features/ripgrep:1": {},
-			"ghcr.io/thediveo/devcontainer-features/lazygit:0": {}
+			"ghcr.io/thediveo/devcontainer-features/lazygit:0": {},
+			"ghcr.io/devcontainers-extra/features/pre-commit:2": {}
 		}
 
 	// 👇 Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
