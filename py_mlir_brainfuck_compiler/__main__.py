@@ -24,6 +24,8 @@ def main():
     gen = GenMLIR()
     gen.gen_main_func(ast.children)
 
+    gen.module.verify()
+
     printer = Printer()
     printer.print_op(gen.module)
 
