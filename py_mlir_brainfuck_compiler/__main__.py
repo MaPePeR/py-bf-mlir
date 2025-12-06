@@ -2,6 +2,7 @@ import sys
 
 import lark
 from xdsl.printer import Printer
+from xdsl.utils.exceptions import VerifyException
 
 from .gen_mlir import GenMLIR
 from .parser import BrainfuckParser
@@ -24,10 +25,20 @@ def main():
     gen = GenMLIR()
     gen.gen_main_func(ast.children)
 
-    gen.module.verify()
+    verify_error = None
+    try:
+        gen.module.verify()
+    except VerifyException as e:
+        verify_error = e
+        print("Verification failed:")
+        print(verify_error)
 
     printer = Printer()
     printer.print_op(gen.module)
+
+    if verify_error:
+        print("\nVerification failed:")
+        print(verify_error)
 
 
 sys.exit(main())
