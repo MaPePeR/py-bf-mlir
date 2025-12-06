@@ -15,12 +15,12 @@ class BrainfuckParser:
 
     def p_code(self, p):
         """
-        code : instruction code
+        code : code instruction
              | empty
         """
         if len(p) == 3:
-            # TODO: This creates an awful lot of lists
-            p[0] = [p[1]] + p[2]
+            p[1].append(p[2])
+            p[0] = p[1]
         elif len(p) == 2:
             p[0] = []
         else:
