@@ -9,7 +9,7 @@ from xdsl.ir import (
 )
 from xdsl.rewriter import InsertPoint
 
-from .dialects import brainfuck as bf
+from .dialects import free_brainfuck as bf
 
 AST: TypeAlias = list[lark.Tree | lark.Token]
 
