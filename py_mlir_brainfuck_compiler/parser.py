@@ -1,49 +1,7 @@
-from ply import yacc
-
-from .lexer import BrainfuckLexer
+import lark
 
 
-class BrainfuckParser:
-    tokens = BrainfuckLexer.tokens
-    literals = BrainfuckLexer.literals
-
-    start = "program"
-
-    def p_program(self, p):
-        "program : code"
-        p[0] = p[1]
-
-    def p_code(self, p):
-        """
-        code : code instruction
-             | empty
-        """
-        if len(p) == 3:
-            p[1].append(p[2])
-            p[0] = p[1]
-        elif len(p) == 2:
-            p[0] = []
-        else:
-            raise Exception("Invalid number of arguments")
-
-    def p_instruction_block(self, p):
-        "instruction : '[' code ']'"
-        p[0] = ("loop", p[2])
-
-    def p_instruction(self, p):
-        """
-        instruction : MOVE_RIGHT
-                     | MOVE_LEFT
-                     | INCREMENT
-                     | DECREMENT
-                     | OUTPUT
-                     | INPUT
-        """
-        p[0] = p[1]
-
-    def p_empty(self, p):
-        "empty :"
-        pass
-
-    def build(self) -> yacc.LRParser:
-        return yacc.yacc(module=self)
+def BrainfuckParser():
+    return lark.Lark.open_from_package(
+        __name__, "brainfuck.lark", parser="lalr", strict=True
+    )
