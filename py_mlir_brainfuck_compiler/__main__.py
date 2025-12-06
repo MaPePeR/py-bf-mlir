@@ -1,6 +1,7 @@
 import sys
 
 from .lexer import BrainfuckLexer
+from .parser import BrainfuckParser
 
 
 def main():
@@ -8,13 +9,11 @@ def main():
         print("Missing arg.")
         return 1
     lexer = BrainfuckLexer()
+    parser = BrainfuckParser().build()
     with open(sys.argv[1]) as h:
         lexer.readFrom(h)
-        while True:
-            tok = lexer.token()
-            if not tok:
-                break
-            print(tok)
+        parsed = parser.parse(lexer=lexer)
+        print(parsed)
 
 
 sys.exit(main())
