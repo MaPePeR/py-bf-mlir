@@ -1,11 +1,30 @@
 import sys
 
 import lark
+from xdsl.context import Context
+from xdsl.dialects import affine, arith, builtin, func, memref, printf, scf
 from xdsl.printer import Printer
 from xdsl.utils.exceptions import VerifyException
 
+from .dialects.free_brainfuck import FreeBrainFuck
+from .dialects.linked_brainfuck import LinkedBrainFuck
 from .gen_mlir import GenMLIR
 from .parser import BrainfuckParser
+from .rewrites.lower_free_to_linked_bf import LowerFreeToLinkedBfPass
+
+
+def context():
+    ctx = Context()
+    ctx.load_dialect(affine.Affine)
+    ctx.load_dialect(arith.Arith)
+    ctx.load_dialect(builtin.Builtin)
+    ctx.load_dialect(func.Func)
+    ctx.load_dialect(memref.MemRef)
+    ctx.load_dialect(printf.Printf)
+    ctx.load_dialect(scf.Scf)
+    ctx.load_dialect(FreeBrainFuck)
+    ctx.load_dialect(LinkedBrainFuck)
+    return ctx
 
 
 def main():
@@ -13,6 +32,8 @@ def main():
         print("Missing arg.")
         return 1
     parser = BrainfuckParser()
+
+    ctx = context()
 
     with open(sys.argv[1]) as h:
         ast = parser.parse(h.read())
@@ -24,6 +45,8 @@ def main():
     )
     gen = GenMLIR()
     gen.gen_main_func(ast.children)
+
+    LowerFreeToLinkedBfPass().apply(ctx, gen.module)
 
     verify_error = None
     try:

@@ -1,3 +1,4 @@
+from xdsl.ir import Dialect
 from xdsl.irdl import IRDLOperation, irdl_op_definition, region_def
 
 
@@ -35,3 +36,18 @@ class InputOp(IRDLOperation):
 class LoopOp(IRDLOperation):
     name = "bf.free.loop"
     body = region_def("single_block")
+
+
+FreeBrainFuck = Dialect(
+    "bf.free",
+    [
+        MoveLeftOp,
+        MoveRightOp,
+        IncrementOp,
+        DecrementOp,
+        OutputOp,
+        InputOp,
+        LoopOp,
+    ],
+    [],
+)
