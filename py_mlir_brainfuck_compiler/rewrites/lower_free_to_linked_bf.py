@@ -3,7 +3,7 @@ from typing import Protocol
 from xdsl.context import Context
 from xdsl.dialects import arith, builtin, func
 from xdsl.dialects.builtin import ModuleOp
-from xdsl.ir import Block, Operation, Region, SSAValue
+from xdsl.ir import Operation, Region, SSAValue
 from xdsl.passes import ModulePass
 from xdsl.rewriter import InsertPoint, Rewriter
 
@@ -11,27 +11,23 @@ from ..dialects import free_brainfuck as free_bf, linked_brainfuck as linked_bf
 
 
 class Visitor(Protocol):
-    def enter(self, op: Operation | Region | Block) -> bool: ...
-    def leave(self, op: Operation | Region | Block) -> None: ...
+    def enter(self, op: Operation) -> bool: ...
+    def leave(self, op: Operation) -> None: ...
 
 
 def walk(op: Operation, visitor: Visitor):
     if visitor.enter(op):
         for region in op.regions:
-            if visitor.enter(region):
-                for block in region.blocks:
-                    if visitor.enter(block):
-                        for block_op in block.ops:
-                            walk(block_op, visitor)
-                        visitor.leave(block)
-                visitor.leave(region)
-    visitor.leave(op)
+            for block in region.blocks:
+                for block_op in block.ops:
+                    walk(block_op, visitor)
+        visitor.leave(op)
 
 
 class FreeToLinkedVisitor(Visitor):
     index: list[SSAValue] = []
 
-    def enter(self, op: Operation | Region | Block) -> bool:
+    def enter(self, op: Operation) -> bool:
         match op:
             case func.FuncOp(body=body):
                 new_op = arith.ConstantOp(builtin.IntegerAttr(0, builtin.IndexType()))
@@ -47,6 +43,7 @@ class FreeToLinkedVisitor(Visitor):
                 self.index[-1] = new_op.results[0]
                 self.index.append(block_index_arg)
                 walk(new_op, self)
+                self.index.pop()
                 return False
             case free_bf.MoveLeftOp():
                 new_op = linked_bf.MoveLeftOp(self.index[-1])
@@ -66,19 +63,13 @@ class FreeToLinkedVisitor(Visitor):
                 Rewriter.replace_op(op, linked_bf.InputOp(self.index[-1]))
             case linked_bf.LoopOp():
                 return True
-            case Region():
-                return True
-            case Block():
-                return True
             case ModuleOp():
                 return True
         return False
 
-    def leave(self, op: Operation | Region | Block):
+    def leave(self, op: Operation):
         match op:
             case func.FuncOp():
-                self.index.pop()
-            case free_bf.LoopOp():
                 self.index.pop()
             case linked_bf.LoopOp(body=body):
                 body.block.add_op(linked_bf.LoopEndOp(self.index[-1]))
