@@ -1,7 +1,7 @@
 from xdsl.context import Context
-from xdsl.dialects import arith, builtin, func, memref
+from xdsl.dialects import arith, builtin, func, memref, scf
 from xdsl.dialects.builtin import ModuleOp
-from xdsl.ir import SSAValue
+from xdsl.ir import Block, Region, SSAValue
 from xdsl.passes import ModulePass
 from xdsl.pattern_rewriter import (
     GreedyRewritePatternApplier,
@@ -78,6 +78,48 @@ class IncDecOpLowering(RewritePattern):
         )
 
 
+class LoopOpLowering(RewritePattern):
+    def __init__(self, memref: SSAValue) -> None:
+        self.memref = memref
+
+    @op_type_rewrite_pattern
+    def match_and_rewrite(
+        self,
+        op: linked_bf.LoopOp,
+        rewriter: PatternRewriter,
+    ):
+        before_block = Block(arg_types=[linked_bf.PositionType()])
+        before_block.add_ops(
+            [
+                val := memref.LoadOp(
+                    operands=[self.memref, before_block.args[0]],
+                    result_types=[MEMORY_TYPE],
+                ),
+                zero := arith.ConstantOp(builtin.IntegerAttr(0, MEMORY_TYPE)),
+                cmp := arith.CmpiOp(val, zero, "ugt"),
+                scf.ConditionOp(cmp.result, before_block.args[0]),
+            ]
+        )
+        rewriter.replace_matched_op(
+            scf.WhileOp(
+                [op.index],
+                [linked_bf.PositionType()],
+                Region(before_block),
+                Region(op.body.detach_block(0)),
+            )
+        )
+
+
+class LoopEndOpLowering(RewritePattern):
+    @op_type_rewrite_pattern
+    def match_and_rewrite(
+        self,
+        op: linked_bf.LoopEndOp,
+        rewriter: PatternRewriter,
+    ):
+        rewriter.replace_matched_op(scf.YieldOp(op.index))
+
+
 class LowerLinkedToBuiltinBfPass(ModulePass):
     """
     A pass for lowering operations in the Toy dialect to built-in dialects.
@@ -117,6 +159,8 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
                 [
                     MoveOpLowering(const_one, const_index_mask),
                     IncDecOpLowering(const_one_ui8, memref_op.results[0]),
+                    LoopOpLowering(memref_op.results[0]),
+                    LoopEndOpLowering(),
                 ]
             ),
         ).rewrite_module(op)
