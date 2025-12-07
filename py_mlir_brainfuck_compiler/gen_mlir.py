@@ -26,6 +26,7 @@ class GenMLIR:
         body = Block()
         body_builder = Builder(InsertPoint.at_end(body))
         self.gen_instructions(body_builder, ast)
+        body_builder.insert(func.ReturnOp())
         func_type = builtin.FunctionType.from_lists([], [])
         self.builder.insert(func.FuncOp("main", func_type, Region(body)))
 
