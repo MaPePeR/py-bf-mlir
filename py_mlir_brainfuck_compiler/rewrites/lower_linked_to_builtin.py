@@ -1,6 +1,7 @@
 from xdsl.context import Context
-from xdsl.dialects import arith, builtin, func
+from xdsl.dialects import arith, builtin, func, memref
 from xdsl.dialects.builtin import ModuleOp
+from xdsl.ir import SSAValue
 from xdsl.passes import ModulePass
 from xdsl.pattern_rewriter import (
     GreedyRewritePatternApplier,
@@ -13,11 +14,14 @@ from xdsl.rewriter import InsertPoint, Rewriter
 
 from ..dialects import linked_brainfuck as linked_bf
 
+MEMORY_SIZE = 1 << 15
+MEMORY_TYPE = builtin.IntegerType(8, builtin.Signedness.SIGNLESS)
+
 
 class MoveOpLowering(RewritePattern):
-    def __init__(self, const_one, const_size) -> None:
+    def __init__(self, const_one, const_index_mask) -> None:
         self.const_one = const_one
-        self.const_size = const_size
+        self.const_size = const_index_mask
 
     @op_type_rewrite_pattern
     def match_and_rewrite(
@@ -40,6 +44,40 @@ class MoveOpLowering(RewritePattern):
         )
 
 
+class IncDecOpLowering(RewritePattern):
+    def __init__(self, const_one, memref: SSAValue) -> None:
+        self.const_one = const_one
+        self.memref = memref
+
+    @op_type_rewrite_pattern
+    def match_and_rewrite(
+        self,
+        op: linked_bf.IncrementOp | linked_bf.DecrementOp,
+        rewriter: PatternRewriter,
+    ):
+        match op:
+            case linked_bf.IncrementOp():
+                new_op = arith.AddiOp
+            case linked_bf.DecrementOp():
+                new_op = arith.SubiOp
+            case _:
+                raise AssertionError("op has wrong type")
+        rewriter.replace_matched_op(
+            [
+                load_op := memref.LoadOp(
+                    operands=[self.memref, op.operands[0]], result_types=[MEMORY_TYPE]
+                ),
+                change_op := new_op(
+                    load_op.results[0], self.const_one.result, MEMORY_TYPE
+                ),
+                store_op := memref.StoreOp(
+                    operands=[change_op.result, self.memref, op.operands[0]]
+                ),
+            ],
+            [],
+        )
+
+
 class LowerLinkedToBuiltinBfPass(ModulePass):
     """
     A pass for lowering operations in the Toy dialect to built-in dialects.
@@ -54,14 +92,31 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
                 const_one := arith.ConstantOp(
                     builtin.IntegerAttr(1, linked_bf.PositionType())
                 ),
+                const_one_ui8 := arith.ConstantOp(
+                    builtin.IntegerAttr(1, MEMORY_TYPE),
+                ),
+                const_index_mask := arith.ConstantOp(
+                    builtin.IntegerAttr(MEMORY_SIZE - 1, linked_bf.PositionType())
+                ),
                 const_size := arith.ConstantOp(
-                    builtin.IntegerAttr(255, linked_bf.PositionType())
+                    builtin.IntegerAttr(MEMORY_SIZE, linked_bf.PositionType())
+                ),
+                memref_op := memref.AllocOp(
+                    [], [], builtin.MemRefType(MEMORY_TYPE, [MEMORY_SIZE])
                 ),
             ],
             InsertPoint.at_start(op.body.block.first_op.body.block),
         )
         const_one.result.name_hint = "const_one"
+        const_one_ui8.result.name_hint = "const_one_ui8"
+        const_index_mask.result.name_hint = "index_mask"
         const_size.result.name_hint = "const_size"
+        memref_op.results[0].name_hint = "memory"
         PatternRewriteWalker(
-            GreedyRewritePatternApplier([MoveOpLowering(const_one, const_size)])
+            GreedyRewritePatternApplier(
+                [
+                    MoveOpLowering(const_one, const_index_mask),
+                    IncDecOpLowering(const_one_ui8, memref_op.results[0]),
+                ]
+            ),
         ).rewrite_module(op)
