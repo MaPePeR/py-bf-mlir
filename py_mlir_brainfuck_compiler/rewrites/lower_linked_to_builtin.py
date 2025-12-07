@@ -166,8 +166,10 @@ class OutputLowering(RewritePattern):
                     "=r,{rax},{rdi},{rsi},{rdx}",
                     [one, one, ptr_to_int_op.results[0], one],
                     has_side_effects=True,
+                    res_types=[builtin.i64],
                 ),
-            ]
+            ],
+            [],
         )
 
 
