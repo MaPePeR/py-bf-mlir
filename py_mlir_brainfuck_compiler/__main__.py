@@ -11,6 +11,7 @@ from .dialects.linked_brainfuck import LinkedBrainFuck
 from .gen_mlir import GenMLIR
 from .parser import BrainfuckParser
 from .rewrites.lower_free_to_linked_bf import LowerFreeToLinkedBfPass
+from .rewrites.lower_linked_to_builtin import LowerLinkedToBuiltinBfPass
 
 
 def context():
@@ -47,6 +48,7 @@ def main():
     gen.gen_main_func(ast.children)
 
     LowerFreeToLinkedBfPass().apply(ctx, gen.module)
+    LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
 
     verify_error = None
     try:
