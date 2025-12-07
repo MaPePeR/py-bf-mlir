@@ -1,5 +1,5 @@
 from xdsl.context import Context
-from xdsl.dialects import arith, builtin, func, memref, scf
+from xdsl.dialects import arith, builtin, func, llvm, memref, scf
 from xdsl.dialects.builtin import ModuleOp
 from xdsl.ir import Block, Region, SSAValue
 from xdsl.passes import ModulePass
@@ -120,6 +120,71 @@ class LoopEndOpLowering(RewritePattern):
         rewriter.replace_matched_op(scf.YieldOp(op.index))
 
 
+class OutputLowering(RewritePattern):
+    def __init__(self, memref: SSAValue) -> None:
+        self.memref = memref
+
+    @op_type_rewrite_pattern
+    def match_and_rewrite(self, op: linked_bf.OutputOp, rewriter: PatternRewriter):
+        memref_llvm_struct = llvm.LLVMStructType(
+            builtin.StringAttr(""),
+            builtin.ArrayAttr(
+                [
+                    llvm.LLVMPointerType(),
+                    llvm.LLVMPointerType(),
+                    builtin.i64,
+                    llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64),
+                    llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64),
+                ]
+            ),
+        )
+        rewriter.replace_matched_op(
+            [
+                one := arith.ConstantOp(
+                    builtin.IntegerAttr(1, builtin.IntegerType(64))
+                ),
+                cast_memref_op := builtin.UnrealizedConversionCastOp(
+                    operands=[self.memref], result_types=[memref_llvm_struct]
+                ),
+                cast_index_op := builtin.UnrealizedConversionCastOp(
+                    operands=[op.index], result_types=[builtin.i64]
+                ),
+                val_op := llvm.ExtractValueOp(
+                    builtin.DenseArrayBase.from_list(builtin.i64, [1]),
+                    cast_memref_op.results[0],
+                    result_type=llvm.LLVMPointerType(),
+                ),
+                elementptr_op := llvm.GEPOp(
+                    val_op.results[0],
+                    [llvm.GEP_USE_SSA_VAL],
+                    MEMORY_TYPE,
+                    ssa_indices=[cast_index_op.results[0]],
+                ),
+                ptr_to_int_op := llvm.PtrToIntOp(elementptr_op.result),
+                llvm.InlineAsmOp(
+                    "syscall",
+                    "=r,{rax},{rdi},{rsi},{rdx}",
+                    [one, one, ptr_to_int_op.results[0], one],
+                    has_side_effects=True,
+                ),
+            ]
+        )
+
+
+class InputLowering(RewritePattern):
+    def __init__(self, memref: SSAValue) -> None:
+        self.memref = memref
+
+    @op_type_rewrite_pattern
+    def match_and_rewrite(self, op: linked_bf.InputOp, rewriter: PatternRewriter):
+
+        rewriter.replace_matched_op(
+            [
+                # TODO: Replace with syscall
+            ]
+        )
+
+
 class LowerLinkedToBuiltinBfPass(ModulePass):
     """
     A pass for lowering operations in the Toy dialect to built-in dialects.
@@ -161,6 +226,8 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
                     IncDecOpLowering(const_one_ui8, memref_op.results[0]),
                     LoopOpLowering(memref_op.results[0]),
                     LoopEndOpLowering(),
+                    OutputLowering(memref_op.results[0]),
+                    InputLowering(memref_op.results[0]),
                 ]
             ),
         ).rewrite_module(op)
