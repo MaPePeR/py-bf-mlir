@@ -196,10 +196,19 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
 
     def apply(self, ctx: Context, op: ModuleOp) -> None:
         assert isinstance(op.body.block.first_op, func.FuncOp)
+
+        init_zero_block = Block([], arg_types=[linked_bf.PositionType()])
+
         Rewriter.insert_op(
             [
+                const_zero := arith.ConstantOp(
+                    builtin.IntegerAttr(0, linked_bf.PositionType())
+                ),
                 const_one := arith.ConstantOp(
                     builtin.IntegerAttr(1, linked_bf.PositionType())
+                ),
+                const_zero_ui8 := arith.ConstantOp(
+                    builtin.IntegerAttr(0, MEMORY_TYPE),
                 ),
                 const_one_ui8 := arith.ConstantOp(
                     builtin.IntegerAttr(1, MEMORY_TYPE),
@@ -213,9 +222,30 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
                 memref_op := memref.AllocOp(
                     [], [], builtin.MemRefType(MEMORY_TYPE, [MEMORY_SIZE])
                 ),
+                scf.ForOp(
+                    const_zero.result,
+                    const_size.result,
+                    const_one.result,
+                    [],
+                    init_zero_block,
+                ),
             ],
             InsertPoint.at_start(op.body.block.first_op.body.block),
         )
+
+        init_zero_block.add_ops(
+            [
+                memref.StoreOp(
+                    operands=[
+                        const_zero_ui8.result,
+                        memref_op.results[0],
+                        init_zero_block.args[0],
+                    ]
+                ),
+                scf.YieldOp(),
+            ]
+        )
+
         const_one.result.name_hint = "const_one"
         const_one_ui8.result.name_hint = "const_one_ui8"
         const_index_mask.result.name_hint = "index_mask"
