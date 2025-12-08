@@ -120,12 +120,19 @@ class LoopEndOpLowering(RewritePattern):
         rewriter.replace_matched_op(scf.YieldOp(op.index))
 
 
-class OutputLowering(RewritePattern):
+class OutputInputOpLowering(RewritePattern):
     def __init__(self, memref: SSAValue) -> None:
         self.memref = memref
 
     @op_type_rewrite_pattern
-    def match_and_rewrite(self, op: linked_bf.OutputOp, rewriter: PatternRewriter):
+    def match_and_rewrite(
+        self, op: linked_bf.OutputOp | linked_bf.InputOp, rewriter: PatternRewriter
+    ):
+        if not isinstance(op, linked_bf.OutputOp) and not isinstance(
+            op, linked_bf.InputOp
+        ):
+            raise AssertionError("Invalid op")
+
         memref_llvm_struct = llvm.LLVMStructType(
             builtin.StringAttr(""),
             builtin.ArrayAttr(
@@ -140,6 +147,9 @@ class OutputLowering(RewritePattern):
         )
         rewriter.replace_matched_op(
             [
+                zero := arith.ConstantOp(
+                    builtin.IntegerAttr(0, builtin.IntegerType(64))
+                ),
                 one := arith.ConstantOp(
                     builtin.IntegerAttr(1, builtin.IntegerType(64))
                 ),
@@ -164,26 +174,16 @@ class OutputLowering(RewritePattern):
                 llvm.InlineAsmOp(
                     "syscall",
                     "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
-                    [one, one, ptr_to_int_op.results[0], one],
+                    (
+                        [one, one, ptr_to_int_op.results[0], one]
+                        if isinstance(op, linked_bf.OutputOp)
+                        else [zero, zero, ptr_to_int_op.results[0], one]
+                    ),
                     has_side_effects=True,
                     res_types=[builtin.i64],
                 ),
             ],
             [],
-        )
-
-
-class InputLowering(RewritePattern):
-    def __init__(self, memref: SSAValue) -> None:
-        self.memref = memref
-
-    @op_type_rewrite_pattern
-    def match_and_rewrite(self, op: linked_bf.InputOp, rewriter: PatternRewriter):
-
-        rewriter.replace_matched_op(
-            [
-                # TODO: Replace with syscall
-            ]
         )
 
 
@@ -258,8 +258,7 @@ class LowerLinkedToBuiltinBfPass(ModulePass):
                     IncDecOpLowering(const_one_ui8, memref_op.results[0]),
                     LoopOpLowering(memref_op.results[0]),
                     LoopEndOpLowering(),
-                    OutputLowering(memref_op.results[0]),
-                    InputLowering(memref_op.results[0]),
+                    OutputInputOpLowering(memref_op.results[0]),
                 ]
             ),
         ).rewrite_module(op)
