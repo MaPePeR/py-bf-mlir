@@ -163,7 +163,7 @@ class OutputLowering(RewritePattern):
                 ptr_to_int_op := llvm.PtrToIntOp(elementptr_op.result),
                 llvm.InlineAsmOp(
                     "syscall",
-                    "=r,{rax},{rdi},{rsi},{rdx}",
+                    "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
                     [one, one, ptr_to_int_op.results[0], one],
                     has_side_effects=True,
                     res_types=[builtin.i64],
