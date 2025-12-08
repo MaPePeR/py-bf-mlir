@@ -193,3 +193,10 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+
+# Ignore example files and their outputs
+*.bf
+*.mlir
+*.s
+*.ll
+*.out
