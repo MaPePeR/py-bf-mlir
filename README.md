@@ -105,3 +105,7 @@ builtin.module {
 ```
 
 This MLIR can then be further lowered/optimized using the `mlir-opt` tool, be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the [Makefile](Makefile), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
+
+## Devcontainer
+
+This project contains a Devcontainer Configuration, however it compiles the [llvm-project](https://github.com/llvm/llvm-project/) to get the `mlir` executables, so first startup can take a while and it is not very optimized in general.
