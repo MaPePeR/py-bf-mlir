@@ -65,3 +65,5 @@ RUN mkdir ${HOME}/llvm-project/build \
         -DLLVM_ENABLE_ASSERTIONS=ON \ 
         -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_ENABLE_LLD=ON \
     && cmake --build . --target check-mlir
+
+ENV PATH="${HOME}/llvm-project/build/bin:$PATH"
