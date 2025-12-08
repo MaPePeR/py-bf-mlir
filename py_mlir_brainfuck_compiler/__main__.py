@@ -55,15 +55,17 @@ def main():
         gen.module.verify()
     except VerifyException as e:
         verify_error = e
-        print("Verification failed:")
-        print(verify_error)
+        print("Verification failed:", file=sys.stderr)
+        print(verify_error, file=sys.stderr)
+        # raise e
 
     printer = Printer()
     printer.print_op(gen.module)
 
     if verify_error:
-        print("\nVerification failed:")
-        print(verify_error)
+        print("\nVerification failed:", file=sys.stderr)
+        print(verify_error, file=sys.stderr)
+        return 1
 
 
 sys.exit(main())
