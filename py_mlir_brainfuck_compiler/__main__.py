@@ -1,4 +1,7 @@
+import argparse
+import pathlib
 import sys
+import typing
 
 import lark
 from xdsl.context import Context
@@ -28,15 +31,16 @@ def context():
     return ctx
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Missing arg.")
-        return 1
+def main(
+    sourcefile: pathlib.Path,
+    target: typing.Literal["ast", "free", "linked", "builtin"],
+    output: typing.TextIO,
+):
     parser = BrainfuckParser()
 
     ctx = context()
 
-    with open(sys.argv[1]) as h:
+    with sourcefile.open("r") as h:
         ast = parser.parse(h.read())
     assert isinstance(ast, lark.Tree)
     assert (
@@ -44,11 +48,16 @@ def main():
         and ast.data.type == "RULE"
         and ast.data.value == "start"
     )
+    if target == "ast":
+        output.write(str(ast))
+        return 0
     gen = GenMLIR()
     gen.gen_main_func(ast.children)
 
-    LowerFreeToLinkedBfPass().apply(ctx, gen.module)
-    LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
+    if target == "linked" or target == "builtin":
+        LowerFreeToLinkedBfPass().apply(ctx, gen.module)
+    if target == "builtin":
+        LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
 
     verify_error = None
     try:
@@ -59,7 +68,7 @@ def main():
         print(verify_error, file=sys.stderr)
         # raise e
 
-    printer = Printer()
+    printer = Printer(stream=output)
     printer.print_op(gen.module)
 
     if verify_error:
@@ -68,4 +77,35 @@ def main():
         return 1
 
 
-sys.exit(main())
+parser = argparse.ArgumentParser(description="Process Toy file")
+parser.add_argument("source", type=pathlib.Path, help="Brainfuck Source File")
+parser.add_argument(
+    "--target",
+    dest="target",
+    choices=[
+        "ast",
+        "free",
+        "linked",
+        "builtin",
+    ],
+    default="builtin",
+    help="What MLIR to generate (default: builtin)",
+)
+parser.add_argument(
+    "--output",
+    "-o",
+    type=pathlib.Path,
+    default=None,
+    help="Output destination (default: stdout)",
+)
+
+args = parser.parse_args()
+output = sys.stdout
+if args.output:
+    assert isinstance(args.output, pathlib.Path)
+    output = args.output.open("w")
+try:
+    ret = main(args.source, args.target, output)
+finally:
+    output.close()
+sys.exit(ret)
