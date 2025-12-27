@@ -1,3 +1,4 @@
+from xdsl.builder import ImplicitBuilder
 from xdsl.context import Context
 from xdsl.dialects import arith, builtin, func, llvm, memref, scf
 from xdsl.dialects.builtin import ModuleOp
@@ -88,26 +89,22 @@ class LoopOpLowering(RewritePattern):
         op: linked_bf.LoopOp,
         rewriter: PatternRewriter,
     ):
-        before_block = Block(arg_types=[linked_bf.PositionType()])
-        before_block.add_ops(
-            [
-                val := memref.LoadOp(
-                    operands=[self.memref, before_block.args[0]],
-                    result_types=[MEMORY_TYPE],
-                ),
-                zero := arith.ConstantOp(builtin.IntegerAttr(0, MEMORY_TYPE)),
-                cmp := arith.CmpiOp(val, zero, "ugt"),
-                scf.ConditionOp(cmp.result, before_block.args[0]),
-            ]
+        while_op = scf.WhileOp(
+            [op.index],
+            [linked_bf.PositionType()],
+            Region(Block([], arg_types=[linked_bf.PositionType()])),
+            Region(op.body.detach_block(0)),
         )
-        rewriter.replace_matched_op(
-            scf.WhileOp(
-                [op.index],
-                [linked_bf.PositionType()],
-                Region(before_block),
-                Region(op.body.detach_block(0)),
+        with ImplicitBuilder(while_op.before_region.block) as (index_arg,):
+            val = memref.LoadOp(
+                operands=[self.memref, index_arg],
+                result_types=[MEMORY_TYPE],
             )
-        )
+            zero = arith.ConstantOp(builtin.IntegerAttr(0, MEMORY_TYPE))
+            cmp = arith.CmpiOp(val, zero, "ugt")
+            scf.ConditionOp(cmp.result, index_arg)
+
+        rewriter.replace_matched_op(while_op)
 
 
 class LoopEndOpLowering(RewritePattern):
