@@ -1,53 +1,25 @@
-from xdsl.ir import Dialect
-from xdsl.irdl import IRDLOperation, irdl_op_definition, region_def
+from functools import cache
+
+from mlir.dialects import irdl
+from mlir.ir import InsertionPoint, Location, Module
 
 
-@irdl_op_definition
-class MoveLeftOp(IRDLOperation):
-    name = "bf.free.left"
+@cache
+def _create_free_dialect() -> Module:
+    with Location.unknown(), InsertionPoint((module := Module.create()).body):
+        dialect = irdl.dialect("bf_free")
+        with InsertionPoint(dialect.body):
+            irdl.operation_("left")
+            irdl.operation_("right")
+            irdl.operation_("inc")
+            irdl.operation_("dec")
+            irdl.operation_("output")
+            irdl.operation_("input")
+            with InsertionPoint(irdl.operation_("loop").body):
+                body = irdl.region([], number_of_blocks=1)
+                irdl.regions_([body], ["body"])
+
+        return module
 
 
-@irdl_op_definition
-class MoveRightOp(IRDLOperation):
-    name = "bf.free.right"
-
-
-@irdl_op_definition
-class IncrementOp(IRDLOperation):
-    name = "bf.free.inc"
-
-
-@irdl_op_definition
-class DecrementOp(IRDLOperation):
-    name = "bf.free.dec"
-
-
-@irdl_op_definition
-class OutputOp(IRDLOperation):
-    name = "bf.free.output"
-
-
-@irdl_op_definition
-class InputOp(IRDLOperation):
-    name = "bf.free.input"
-
-
-@irdl_op_definition
-class LoopOp(IRDLOperation):
-    name = "bf.free.loop"
-    body = region_def("single_block")
-
-
-FreeBrainFuck = Dialect(
-    "bf.free",
-    [
-        MoveLeftOp,
-        MoveRightOp,
-        IncrementOp,
-        DecrementOp,
-        OutputOp,
-        InputOp,
-        LoopOp,
-    ],
-    [],
-)
+FreeBrainFuck = _create_free_dialect

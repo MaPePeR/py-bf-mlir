@@ -1,54 +1,46 @@
 from typing import TypeAlias
 
 import lark
-from xdsl.builder import Builder
-from xdsl.dialects import builtin, func
-from xdsl.ir import (
-    Block,
-    Region,
-)
-from xdsl.rewriter import InsertPoint
-
-from .dialects import free_brainfuck as bf
+from mlir.dialects import builtin, func
+from mlir.ir import InsertionPoint, Module, Operation
 
 AST: TypeAlias = list[lark.Tree | lark.Token]
 
 
 class GenMLIR:
-    builder: Builder
-    module: builtin.ModuleOp
+    module: Module
 
     def __init__(self) -> None:
-        self.module = builtin.ModuleOp([])
-        self.builder = Builder(InsertPoint.at_end(self.module.body.blocks[0]))
+        self.module = Module.create()
 
     def gen_main_func(self, ast: AST):
-        body = Block()
-        body_builder = Builder(InsertPoint.at_end(body))
-        self.gen_instructions(body_builder, ast)
-        body_builder.insert(func.ReturnOp())
-        func_type = builtin.FunctionType.from_lists([], [])
-        self.builder.insert(func.FuncOp("main", func_type, Region(body)))
+        with InsertionPoint(self.module.body):
+            func_type = builtin.FunctionType.get([], [])
 
-    def gen_instructions(self, builder: Builder, ast: AST):
+            def build_body(_):
+                self.gen_instructions(ast)
+                func.ReturnOp([])
+
+            func.FuncOp("main", func_type, body_builder=build_body)
+
+    def gen_instructions(self, ast: AST):
         for op in ast:
             match op:
                 case lark.Token("MOVE_LEFT"):
-                    builder.insert(bf.MoveLeftOp())
+                    Operation.create("bf_free.left")
                 case lark.Token("MOVE_RIGHT"):
-                    builder.insert(bf.MoveRightOp())
+                    Operation.create("bf_free.right")
                 case lark.Token("INCREMENT"):
-                    builder.insert(bf.IncrementOp())
+                    Operation.create("bf_free.inc")
                 case lark.Token("DECREMENT"):
-                    builder.insert(bf.DecrementOp())
+                    Operation.create("bf_free.dec")
                 case lark.Token("OUTPUT"):
-                    builder.insert(bf.OutputOp())
+                    Operation.create("bf_free.output")
                 case lark.Token("INPUT"):
-                    builder.insert(bf.InputOp())
+                    Operation.create("bf_free.input")
                 case lark.Tree(lark.Token("RULE", "loop"), children):
-                    body = Block()
-                    body_builder = Builder(InsertPoint.at_end(body))
-                    self.gen_instructions(body_builder, children)
-                    builder.insert(bf.LoopOp(regions=[Region(body)]))
+                    op = Operation.create("bf_free.loop", regions=1)
+                    with InsertionPoint(op.regions[0].blocks.append()):
+                        self.gen_instructions(children)
                 case other:
                     raise Exception(f"Invalid Token in AST: {other!r}")
