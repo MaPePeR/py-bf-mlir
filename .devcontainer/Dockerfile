@@ -32,7 +32,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
 # Python and poetry installation
 USER $USER
 ARG HOME="/home/$USER"
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.13
 # ARG PYTHON_VERSION=3.10
 
 ENV PYENV_ROOT="${HOME}/.pyenv"
@@ -50,11 +50,11 @@ RUN echo "done 0" \
 
 
 
-ARG LLVM_VERSION=21.1.6
+ARG LLVM_VERSION=1e985b6ddf023af5782d48c1cce881668fdf6ceb
+ADD --chown=vscode:vscode "https://github.com/llvm/llvm-project/archive/${LLVM_VERSION}.tar.gz" "${HOME}/llvm-project.tar.gz"
 
-ADD --chown=vscode:vscode "https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-${LLVM_VERSION}.tar.gz" "${HOME}"
 RUN mkdir ${HOME}/llvm-project \
-    && tar -C ${HOME}/llvm-project -xzf ${HOME}/llvmorg-${LLVM_VERSION}.tar.gz --strip-components=1
+    && tar -C ${HOME}/llvm-project -xzf ${HOME}/llvm-project.tar.gz --strip-components=1
 RUN mkdir ${HOME}/llvm-project/build \
     && cd ${HOME}/llvm-project/build \
     && cmake -G Ninja ../llvm \
@@ -62,7 +62,8 @@ RUN mkdir ${HOME}/llvm-project/build \
         -DLLVM_BUILD_EXAMPLES=OFF \
         -DLLVM_TARGETS_TO_BUILD="Native;NVPTX;AMDGPU" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DLLVM_ENABLE_ASSERTIONS=ON \ 
+        -DLLVM_ENABLE_ASSERTIONS=ON \
+        -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
         -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_ENABLE_LLD=ON \
     && cmake --build . --target check-mlir
 
