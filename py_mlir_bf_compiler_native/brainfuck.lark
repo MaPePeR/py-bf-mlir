@@ -1,0 +1,22 @@
+// tokens: 
+MOVE_RIGHT: ">"
+MOVE_LEFT: "<"
+INCREMENT: "+"
+DECREMENT: "-"
+OUTPUT: "."
+INPUT: ","
+
+start: _instruction*
+
+_instruction: ( loop | _op )
+loop: "[" (_instruction*) "]"
+_op: MOVE_RIGHT
+    | MOVE_LEFT
+    | INCREMENT
+    | DECREMENT
+    | OUTPUT
+    | INPUT
+
+COMMENT: /[^<>+.,\[\]-]/+
+
+%ignore COMMENT
