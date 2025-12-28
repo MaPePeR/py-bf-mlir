@@ -57,6 +57,7 @@ RUN mkdir ${HOME}/llvm-project \
     && tar -C ${HOME}/llvm-project -xzf ${HOME}/llvm-project.tar.gz --strip-components=1
 RUN mkdir ${HOME}/llvm-project/build \
     && cd ${HOME}/llvm-project/build \
+    && python -m pip install -r ../mlir/python/requirements.txt \
     && cmake -G Ninja ../llvm \
         -DLLVM_ENABLE_PROJECTS=mlir \
         -DLLVM_BUILD_EXAMPLES=OFF \
@@ -68,3 +69,4 @@ RUN mkdir ${HOME}/llvm-project/build \
     && cmake --build . --target check-mlir
 
 ENV PATH="${HOME}/llvm-project/build/bin:$PATH"
+ENV PYTHONPATH=${HOME}/llvm-project/build/tools/mlir/python_packages/mlir_core
