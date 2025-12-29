@@ -5,11 +5,13 @@ INCREMENT: "+"
 DECREMENT: "-"
 OUTPUT: "."
 INPUT: ","
+LOOP_START: "["
+LOOP_END: "]"
 
 start: _instruction*
 
 _instruction: ( loop | _op )
-loop: "[" (_instruction*) "]"
+loop: LOOP_START (_instruction*) LOOP_END
 _op: MOVE_RIGHT
     | MOVE_LEFT
     | INCREMENT

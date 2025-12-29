@@ -50,6 +50,7 @@ def main(
         pm.run(gen.module.operation)
 
     output.write(str(gen.module))
+    # gen.module.operation.print(enable_debug_info=True)
     gen.module.operation.verify()
 
 

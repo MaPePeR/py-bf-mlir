@@ -2,7 +2,7 @@ from typing import TypeAlias
 
 import lark
 from mlir.dialects import builtin, func
-from mlir.ir import InsertionPoint, Module, Operation
+from mlir.ir import InsertionPoint, Location, Module, Operation
 
 AST: TypeAlias = list[lark.Tree | lark.Token]
 
@@ -26,21 +26,39 @@ class GenMLIR:
     def gen_instructions(self, ast: AST):
         for op in ast:
             match op:
-                case lark.Token("MOVE_LEFT"):
-                    Operation.create("bf_free.left")
-                case lark.Token("MOVE_RIGHT"):
-                    Operation.create("bf_free.right")
-                case lark.Token("INCREMENT"):
-                    Operation.create("bf_free.inc")
-                case lark.Token("DECREMENT"):
-                    Operation.create("bf_free.dec")
-                case lark.Token("OUTPUT"):
-                    Operation.create("bf_free.output")
-                case lark.Token("INPUT"):
-                    Operation.create("bf_free.input")
-                case lark.Tree(lark.Token("RULE", "loop"), children):
-                    op = Operation.create("bf_free.loop", regions=1)
-                    with InsertionPoint(op.regions[0].blocks.append()):
-                        self.gen_instructions(children)
+                case lark.Token():
+                    loc = Location.file("input.bf", op.line, op.column)
+                case lark.Tree(
+                    lark.Token("RULE", "loop"),
+                    [lark.Token("LOOP_START") as loop_tok, *_, lark.Token("LOOP_END")],
+                ):
+                    loc = Location.file("input.bf", loop_tok.line, loop_tok.column)
                 case other:
-                    raise Exception(f"Invalid Token in AST: {other!r}")
+                    raise Exception(f"Invalid Element in AST: {other!r}")
+            with loc:
+                match op:
+                    case lark.Token("MOVE_LEFT"):
+                        Operation.create("bf_free.left")
+                    case lark.Token("MOVE_RIGHT"):
+                        Operation.create("bf_free.right")
+                    case lark.Token("INCREMENT"):
+                        Operation.create("bf_free.inc")
+                    case lark.Token("DECREMENT"):
+                        Operation.create("bf_free.dec")
+                    case lark.Token("OUTPUT"):
+                        Operation.create("bf_free.output")
+                    case lark.Token("INPUT"):
+                        Operation.create("bf_free.input")
+                    case lark.Tree(
+                        lark.Token("RULE", "loop"),
+                        [
+                            lark.Token("LOOP_START") as loop_tok,
+                            *children,
+                            lark.Token("LOOP_END"),
+                        ],
+                    ):
+                        op = Operation.create("bf_free.loop", regions=1)
+                        with InsertionPoint(op.regions[0].blocks.append()):
+                            self.gen_instructions(children)
+                    case other:
+                        raise Exception(f"Invalid Token in AST: {other!r}")
