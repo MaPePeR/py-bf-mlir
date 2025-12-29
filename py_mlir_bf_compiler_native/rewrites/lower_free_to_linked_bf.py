@@ -1,86 +1,116 @@
 from typing import Protocol
 
-from xdsl.context import Context
-from xdsl.dialects import arith, builtin, func
-from xdsl.dialects.builtin import ModuleOp
-from xdsl.ir import Operation, Region, SSAValue
-from xdsl.passes import ModulePass
-from xdsl.rewriter import InsertPoint, Rewriter
-
-from ..dialects import free_brainfuck as free_bf, linked_brainfuck as linked_bf
+from mlir.dialects import arith, builtin
+from mlir.ir import InsertionPoint, Location, Operation, OpView
 
 
 class Visitor(Protocol):
-    def enter(self, op: Operation) -> bool: ...
-    def leave(self, op: Operation) -> None: ...
+    def enter(self, op: OpView) -> bool: ...
+    def leave(self, op: OpView) -> None: ...
 
 
-def walk(op: Operation, visitor: Visitor):
+def walk(op: OpView, visitor: Visitor):
     if visitor.enter(op):
         for region in op.regions:
             for block in region.blocks:
-                for block_op in block.ops:
+                for block_op in block.operations:
                     walk(block_op, visitor)
         visitor.leave(op)
 
 
 class FreeToLinkedVisitor(Visitor):
-    index: list[SSAValue] = []
+    index: list = []
 
-    def enter(self, op: Operation) -> bool:
-        match op:
-            case func.FuncOp(body=body):
-                new_op = arith.ConstantOp(builtin.IntegerAttr(0, builtin.IndexType()))
-                Rewriter.insert_op(new_op, InsertPoint.at_start(body.block))
+    def enter(self, op: OpView) -> bool:
+        match op.operation:
+            case Operation(name="func.func"):
+                with InsertionPoint.at_block_begin(op.operation.regions[0].blocks[0]):
+                    new_op = arith.ConstantOp(builtin.IndexType.get(), 0)
                 assert len(self.index) == 0
                 self.index = [new_op.results[0]]
                 return True
-            case free_bf.LoopOp(body=body):
-                block = body.detach_block(body.block)
-                block_index_arg = block.insert_arg(linked_bf.PositionType(), 0)
-                new_op = linked_bf.LoopOp(self.index[-1], Region(block))
-                Rewriter.replace_op(op, new_op, [])
+            case Operation(name="bf_free.loop"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.loop",
+                        operands=[self.index[-1]],
+                        results=[builtin.IndexType.get()],
+                        regions=1,
+                    )
+                op.operation.regions[0].blocks[0].append_to(new_op.regions[0])
+                new_op.regions[0].blocks[0].add_argument(
+                    builtin.IndexType.get(), Location.unknown()
+                )
+                op.operation.detach_from_parent()
+
                 self.index[-1] = new_op.results[0]
-                self.index.append(block_index_arg)
-                walk(new_op, self)
+                self.index.append(new_op.regions[0].blocks[0].arguments[0])
+                walk(OpView(new_op), self)
                 self.index.pop()
+
                 return False
-            case free_bf.MoveLeftOp():
-                new_op = linked_bf.MoveLeftOp(self.index[-1])
-                Rewriter.replace_op(op, new_op, [])
+            case Operation(name="bf_free.left"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.left",
+                        operands=[self.index[-1]],
+                        results=[builtin.IndexType.get()],
+                    )
+                op.operation.detach_from_parent()
                 self.index[-1] = new_op.results[0]
-            case free_bf.MoveRightOp():
-                new_op = linked_bf.MoveRightOp(self.index[-1])
-                Rewriter.replace_op(op, new_op, [])
+            case Operation(name="bf_free.right"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.right",
+                        operands=[self.index[-1]],
+                        results=[builtin.IndexType.get()],
+                    )
+                op.operation.detach_from_parent()
                 self.index[-1] = new_op.results[0]
-            case free_bf.IncrementOp():
-                Rewriter.replace_op(op, linked_bf.IncrementOp(self.index[-1]))
-            case free_bf.DecrementOp():
-                Rewriter.replace_op(op, linked_bf.DecrementOp(self.index[-1]))
-            case free_bf.OutputOp():
-                Rewriter.replace_op(op, linked_bf.OutputOp(self.index[-1]))
-            case free_bf.InputOp():
-                Rewriter.replace_op(op, linked_bf.InputOp(self.index[-1]))
-            case linked_bf.LoopOp():
+            case Operation(name="bf_free.inc"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.inc", operands=[self.index[-1]]
+                    )
+                op.operation.detach_from_parent()
+            case Operation(name="bf_free.dec"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.dec", operands=[self.index[-1]]
+                    )
+                op.operation.detach_from_parent()
+            case Operation(name="bf_free.output"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.output", operands=[self.index[-1]]
+                    )
+                op.operation.detach_from_parent()
+            case Operation(name="bf_free.input"):
+                with InsertionPoint.after(op.operation):
+                    new_op = Operation.create(
+                        "bf_linked.input", operands=[self.index[-1]]
+                    )
+                op.operation.detach_from_parent()
+            case Operation(name="bf_linked.loop"):
                 return True
-            case ModuleOp():
+            case Operation(name="builtin.module"):
                 return True
+
         return False
 
-    def leave(self, op: Operation):
-        match op:
-            case func.FuncOp():
+    def leave(self, op: OpView):
+
+        match op.operation:
+            case Operation(name="func.func"):
                 self.index.pop()
-            case linked_bf.LoopOp(body=body):
-                body.block.add_op(linked_bf.LoopEndOp(self.index[-1]))
+            case Operation(name="bf_linked.loop"):
+                op.operation.regions[0].blocks[0].append(
+                    Operation.create("bf_linked.loop_end", operands=[self.index[-1]])
+                )
 
 
-class LowerFreeToLinkedBfPass(ModulePass):
+def LowerFreeToLinkedBfPass(op, pass_):
     """
-    A pass for lowering operations in the Toy dialect to built-in dialects.
+    A pass for lowering operations in the free dialect to linked dialect.
     """
-
-    name = "lower-free-to-linked"
-
-    def apply(self, ctx: Context, op: ModuleOp) -> None:
-        walk(op, FreeToLinkedVisitor())
+    walk(op, FreeToLinkedVisitor())

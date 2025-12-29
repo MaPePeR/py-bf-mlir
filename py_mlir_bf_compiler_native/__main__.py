@@ -6,12 +6,13 @@ import typing
 import lark
 from mlir.dialects import irdl
 from mlir.ir import Context, Location
+from mlir.passmanager import PassManager
 
 from .dialects.free_brainfuck import FreeBrainFuck
+from .dialects.linked_brainfuck import LinkedBrainFuck
 from .gen_mlir import GenMLIR
 from .parser import BrainfuckParser
 from .rewrites.lower_free_to_linked_bf import LowerFreeToLinkedBfPass
-from .rewrites.lower_linked_to_builtin import LowerLinkedToBuiltinBfPass
 
 
 def main(
@@ -32,15 +33,21 @@ def main(
     if target == "ast":
         output.write(str(ast))
         return 0
-    with Context() as ctx, Location.unknown():
+    with Context(), Location.unknown():
         irdl.load_dialects(FreeBrainFuck())
+        if target != "free":
+            irdl.load_dialects(LinkedBrainFuck())
         gen = GenMLIR()
         gen.gen_main_func(ast.children)
 
-    if target == "linked" or target == "builtin":
-        LowerFreeToLinkedBfPass().apply(ctx, gen.module)
-    if target == "builtin":
-        LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
+        pm = PassManager()
+        pm.enable_verifier(False)
+        if target == "linked" or target == "builtin":
+            pm.add(LowerFreeToLinkedBfPass)
+        if target == "builtin":
+            # LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
+            pass
+        pm.run(gen.module.operation)
 
     output.write(str(gen.module))
     gen.module.operation.verify()
