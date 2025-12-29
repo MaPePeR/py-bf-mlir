@@ -114,8 +114,8 @@ class _Patterns:
                 llvm.PointerType.get(),
                 llvm.PointerType.get(),
                 builtin.IntegerType.get_signless(64),
-                # llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64)
-                # llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64)
+                builtin.Type.parse("!llvm.array<1 x i64>"),
+                builtin.Type.parse("!llvm.array<1 x i64>"),
             ]
         )
         with rewriter.ip:
