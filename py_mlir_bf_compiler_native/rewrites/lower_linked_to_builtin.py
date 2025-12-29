@@ -17,15 +17,21 @@ class _Patterns:
         self.memref = memref
 
     def getPatternSet(self):
+        def make_op_pattern(opname: str):
+            class OpPattern:
+                OPERATION_NAME = opname
+
+            return OpPattern
+
         set = RewritePatternSet()
-        set.add(Operation.create("bf_linked.left"), self.lower_move_ops)
-        set.add(Operation.create("bf_linked.right"), self.lower_move_ops)
+        set.add(make_op_pattern("bf_linked.left"), self.lower_move_ops)
+        set.add(make_op_pattern("bf_linked.right"), self.lower_move_ops)
         return set.freeze()
 
     def lower_move_ops(
         self,
         op: Operation,
-        rewriter,
+        rewriter: PatternRewriter,
     ):
         if op.name == "bf_linked.left":
             direction_op = arith.SubIOp
@@ -33,13 +39,11 @@ class _Patterns:
             direction_op = arith.AddIOp
         else:
             raise AssertionError("op was not of the expected type.")
-        rewriter.replace_matched_op(
-            [
-                add_op := direction_op(op.index, self.const_one.result),
-                and_op := arith.AndIOp(add_op.result, self.const_size.result),
-            ],
-            [and_op.result],
-        )
+        with rewriter.ip:
+            add_op = direction_op(op.operands[0], self.const_one.result)
+            and_op = arith.AndIOp(add_op.result, self.const_size.result)
+
+        rewriter.replace_op(op, and_op)
 
     def lower_inc_dec_ops(
         self,
