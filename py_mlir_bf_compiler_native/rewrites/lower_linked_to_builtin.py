@@ -46,7 +46,7 @@ class _Patterns:
             direction_op = arith.AddIOp
         else:
             raise AssertionError("op was not of the expected type.")
-        with rewriter.ip:
+        with rewriter.ip, op.location:
             add_op = direction_op(op.operands[0], self.const_one.result)
             and_op = arith.AndIOp(add_op.result, self.const_size.result)
 
@@ -64,7 +64,7 @@ class _Patterns:
                 new_op = arith.SubIOp
             case _:
                 raise AssertionError("op has wrong type")
-        with rewriter.ip:
+        with rewriter.ip, op.location:
             one = arith.ConstantOp(builtin.IntegerType.get_signless(8), 1)
             load_op = memref.LoadOp(self.memref, [op.operands[0]])
             change_op = new_op(load_op.results[0], one)
@@ -76,7 +76,7 @@ class _Patterns:
         op: OpView,
         rewriter: PatternRewriter,
     ):
-        with rewriter.ip:
+        with rewriter.ip, op.location:
             while_op = scf.WhileOp(
                 [builtin.IndexType.get()],
                 [op.operands[0]],
@@ -101,7 +101,7 @@ class _Patterns:
         op: OpView,
         rewriter: PatternRewriter,
     ):
-        with rewriter.ip:
+        with rewriter.ip, op.location:
             yield_op = scf.YieldOp([op.operands[0]])
         rewriter.replace_op(op, yield_op)
 
@@ -118,7 +118,7 @@ class _Patterns:
                 builtin.Type.parse("!llvm.array<1 x i64>"),
             ]
         )
-        with rewriter.ip:
+        with rewriter.ip, op.location:
             zero = arith.ConstantOp(builtin.IntegerType.get_signless(64), 0)
             one = arith.ConstantOp(builtin.IntegerType.get_signless(64), 1)
 
