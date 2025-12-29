@@ -6,8 +6,6 @@ from mlir.rewrite import (
     apply_patterns_and_fold_greedily,
 )
 
-from ..dialects import linked_brainfuck as linked_bf
-
 MEMORY_SIZE = 1 << 15
 MEMORY_TYPE = lambda: builtin.IntegerType.get_signless(8)
 
@@ -107,64 +105,59 @@ class _Patterns:
             yield_op = scf.YieldOp([op.operands[0]])
         rewriter.replace_op(op, yield_op)
 
-    def lower_output_input_ops(self, op: Operation, rewriter):
-        if not isinstance(op, linked_bf.OutputOp) and not isinstance(
-            op, linked_bf.InputOp
-        ):
+    def lower_output_input_ops(self, op: OpView, rewriter: PatternRewriter):
+        if op.name not in ("bf_linked.output", "bf_linked.input"):
             raise AssertionError("Invalid op")
 
-        memref_llvm_struct = llvm.LLVMStructType(
-            builtin.StringAttr(""),
-            builtin.ArrayAttr(
-                [
-                    llvm.LLVMPointerType(),
-                    llvm.LLVMPointerType(),
-                    builtin.i64,
-                    llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64),
-                    llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64),
-                ]
-            ),
-        )
-        rewriter.replace_matched_op(
+        memref_llvm_struct = llvm.StructType.get_literal(
             [
-                zero := arith.ConstantOp(
-                    builtin.IntegerAttr(0, builtin.IntegerType(64))
-                ),
-                one := arith.ConstantOp(
-                    builtin.IntegerAttr(1, builtin.IntegerType(64))
-                ),
-                cast_memref_op := builtin.UnrealizedConversionCastOp(
-                    operands=[self.memref], result_types=[memref_llvm_struct]
-                ),
-                cast_index_op := builtin.UnrealizedConversionCastOp(
-                    operands=[op.index], result_types=[builtin.i64]
-                ),
-                val_op := llvm.ExtractValueOp(
-                    builtin.DenseArrayBase.from_list(builtin.i64, [1]),
-                    cast_memref_op.results[0],
-                    result_type=llvm.LLVMPointerType(),
-                ),
-                elementptr_op := llvm.GEPOp(
-                    val_op.results[0],
-                    [llvm.GEP_USE_SSA_VAL],
-                    MEMORY_TYPE,
-                    ssa_indices=[cast_index_op.results[0]],
-                ),
-                ptr_to_int_op := llvm.PtrToIntOp(elementptr_op.result),
-                llvm.InlineAsmOp(
-                    "syscall",
-                    "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
-                    (
-                        [one, one, ptr_to_int_op.results[0], one]
-                        if isinstance(op, linked_bf.OutputOp)
-                        else [zero, zero, ptr_to_int_op.results[0], one]
-                    ),
-                    has_side_effects=True,
-                    res_types=[builtin.i64],
-                ),
-            ],
-            [],
+                llvm.PointerType.get(),
+                llvm.PointerType.get(),
+                builtin.IntegerType.get_signless(64),
+                # llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64)
+                # llvm.LLVMArrayType(builtin.IntAttr(1), builtin.i64)
+            ]
         )
+        with rewriter.ip:
+            zero = arith.ConstantOp(builtin.IntegerType.get_signless(64), 0)
+            one = arith.ConstantOp(builtin.IntegerType.get_signless(64), 1)
+
+            cast_memref_op = builtin.UnrealizedConversionCastOp(
+                inputs=[self.memref], outputs=[memref_llvm_struct]
+            )
+            cast_index_op = builtin.UnrealizedConversionCastOp(
+                inputs=[op.operands[0]], outputs=[builtin.IntegerType.get_signless(64)]
+            )
+            val_op = llvm.ExtractValueOp(
+                position=[1],
+                container=cast_memref_op.results[0],
+                res=llvm.PointerType.get(),
+            )
+            elementptr_op = llvm.GEPOp(
+                base=val_op.results[0],
+                res=llvm.PointerType.get(),
+                dynamicIndices=[cast_index_op.results[0]],
+                rawConstantIndices=[],
+                elem_type=MEMORY_TYPE(),
+                noWrapFlags=llvm.GEPNoWrapFlags.none,
+            )
+
+            ptr_to_int_op = llvm.PtrToIntOp(
+                res=builtin.IntegerType.get_signless(64), arg=elementptr_op.result
+            )
+
+            llvm.InlineAsmOp(
+                res=builtin.IntegerType.get_signless(64),
+                asm_string="syscall",
+                constraints="={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
+                operands_=(
+                    [one, one, ptr_to_int_op.results[0], one]
+                    if op.name == "bf_linked.output"
+                    else [zero, zero, ptr_to_int_op.results[0], one]
+                ),
+                has_side_effects=True,
+            )
+        rewriter.erase_op(op)
 
 
 def LowerLinkedToBuiltinBfPass(op: OpView, pass_):
