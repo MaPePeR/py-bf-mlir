@@ -18,7 +18,7 @@ from .rewrites.lower_linked_to_builtin import LowerLinkedToBuiltinBfPass
 
 def main(
     sourcefile: pathlib.Path,
-    target: typing.Literal["ast", "free", "linked", "builtin"],
+    target: typing.Literal["ast", "free", "linked", "builtin", "low_builtin"],
     output: typing.TextIO,
 ):
     parser = BrainfuckParser()
@@ -43,10 +43,28 @@ def main(
 
         pm = PassManager()
         pm.enable_verifier(False)
-        if target == "linked" or target == "builtin":
+        if target == "linked" or target == "builtin" or target == "low_builtin":
             pm.add(LowerFreeToLinkedBfPass)
-        if target == "builtin":
+        if target == "builtin" or target == "low_builtin":
             pm.add(LowerLinkedToBuiltinBfPass)
+        if target == "low_builtin":
+            pm.add(
+                ",".join(
+                    [
+                        "convert-scf-to-cf",
+                        "convert-cf-to-llvm",
+                        "convert-func-to-llvm",
+                        "convert-arith-to-llvm",
+                        "expand-strided-metadata",
+                        "normalize-memrefs",
+                        "memref-expand",
+                        "fold-memref-alias-ops",
+                        "finalize-memref-to-llvm",
+                        "reconcile-unrealized-casts",
+                    ]
+                )
+            )
+
         pm.run(gen.module.operation)
 
     output.write(str(gen.module))
@@ -64,6 +82,7 @@ parser.add_argument(
         "free",
         "linked",
         "builtin",
+        "low_builtin",
     ],
     default="builtin",
     help="What MLIR to generate (default: builtin)",
