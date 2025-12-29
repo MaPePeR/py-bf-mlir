@@ -137,7 +137,7 @@ class _Patterns:
                 base=val_op.results[0],
                 res=llvm.PointerType.get(),
                 dynamicIndices=[cast_index_op.results[0]],
-                rawConstantIndices=[],
+                rawConstantIndices=builtin.DenseI32ArrayAttr.get([-2147483648]),
                 elem_type=MEMORY_TYPE(),
                 noWrapFlags=llvm.GEPNoWrapFlags.none,
             )
