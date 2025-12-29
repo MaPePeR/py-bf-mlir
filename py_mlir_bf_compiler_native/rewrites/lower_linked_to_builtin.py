@@ -1,5 +1,5 @@
 from mlir.dialects import arith, builtin, func, llvm, memref, scf
-from mlir.ir import InsertionPoint, Operation
+from mlir.ir import InsertionPoint, Operation, OpView
 from mlir.rewrite import (
     PatternRewriter,
     RewritePatternSet,
@@ -7,6 +7,9 @@ from mlir.rewrite import (
 )
 
 from ..dialects import linked_brainfuck as linked_bf
+
+MEMORY_SIZE = 1 << 15
+MEMORY_TYPE = lambda: builtin.IntegerType.get_signless(8)
 
 
 class _Patterns:
@@ -26,11 +29,17 @@ class _Patterns:
         set = RewritePatternSet()
         set.add(make_op_pattern("bf_linked.left"), self.lower_move_ops)
         set.add(make_op_pattern("bf_linked.right"), self.lower_move_ops)
+        set.add(make_op_pattern("bf_linked.inc"), self.lower_inc_dec_ops)
+        set.add(make_op_pattern("bf_linked.dec"), self.lower_inc_dec_ops)
+        set.add(make_op_pattern("bf_linked.loop"), self.lower_loop_op)
+        set.add(make_op_pattern("bf_linked.loop_end"), self.lower_loop_end_op)
+        set.add(make_op_pattern("bf_linked.output"), self.lower_output_input_ops)
+        set.add(make_op_pattern("bf_linked.input"), self.lower_output_input_ops)
         return set.freeze()
 
     def lower_move_ops(
         self,
-        op: Operation,
+        op: OpView,
         rewriter: PatternRewriter,
     ):
         if op.name == "bf_linked.left":
@@ -47,59 +56,56 @@ class _Patterns:
 
     def lower_inc_dec_ops(
         self,
-        op: Operation,
-        rewriter,
+        op: OpView,
+        rewriter: PatternRewriter,
     ):
-        match op:
-            case linked_bf.IncrementOp():
-                new_op = arith.AddiOp
-            case linked_bf.DecrementOp():
-                new_op = arith.SubiOp
+        match op.operation:
+            case Operation(name="bf_linked.inc"):
+                new_op = arith.AddIOp
+            case Operation(name="bf_linked.dec"):
+                new_op = arith.SubIOp
             case _:
                 raise AssertionError("op has wrong type")
-        rewriter.replace_matched_op(
-            [
-                load_op := memref.LoadOp(
-                    operands=[self.memref, op.operands[0]], result_types=[MEMORY_TYPE]
-                ),
-                change_op := new_op(
-                    load_op.results[0], self.const_one_ui8.result, MEMORY_TYPE
-                ),
-                store_op := memref.StoreOp(
-                    operands=[change_op.result, self.memref, op.operands[0]]
-                ),
-            ],
-            [],
-        )
+        with rewriter.ip:
+            one = arith.ConstantOp(builtin.IntegerType.get_signless(8), 1)
+            load_op = memref.LoadOp(self.memref, [op.operands[0]])
+            change_op = new_op(load_op.results[0], one)
+            memref.StoreOp(change_op.result, self.memref, [op.operands[0]])
+        rewriter.erase_op(op)
 
     def lower_loop_op(
         self,
-        op: Operation,
-        rewriter,
+        op: OpView,
+        rewriter: PatternRewriter,
     ):
-        while_op = scf.WhileOp(
-            [op.index],
-            [linked_bf.PositionType()],
-            Region(Block([], arg_types=[linked_bf.PositionType()])),
-            Region(op.body.detach_block(0)),
-        )
-        with ImplicitBuilder(while_op.before_region.block) as (index_arg,):
-            val = memref.LoadOp(
-                operands=[self.memref, index_arg],
-                result_types=[MEMORY_TYPE],
+        with rewriter.ip:
+            while_op = scf.WhileOp(
+                [builtin.IndexType.get()],
+                [op.operands[0]],
             )
-            zero = arith.ConstantOp(builtin.IntegerAttr(0, MEMORY_TYPE))
-            cmp = arith.CmpiOp(val, zero, "ugt")
-            scf.ConditionOp(cmp.result, index_arg)
+            op.operation.regions[0].blocks[0].append_to(while_op.regions[1])
+            with InsertionPoint(before_block := while_op.regions[0].blocks.append()):
+                index_arg = before_block.add_argument(
+                    builtin.IndexType.get(), op.location
+                )
+                val = memref.LoadOp(
+                    self.memref,
+                    [index_arg],
+                )
+                zero = arith.ConstantOp(MEMORY_TYPE(), 0)
+                cmp = arith.cmpi(arith.CmpIPredicate.ugt, val, zero)
+                scf.ConditionOp(cmp, [index_arg])
 
-        rewriter.replace_matched_op(while_op)
+        rewriter.replace_op(op, while_op)
 
     def lower_loop_end_op(
         self,
-        op: Operation,
-        rewriter,
+        op: OpView,
+        rewriter: PatternRewriter,
     ):
-        rewriter.replace_matched_op(scf.YieldOp(op.index))
+        with rewriter.ip:
+            yield_op = scf.YieldOp([op.operands[0]])
+        rewriter.replace_op(op, yield_op)
 
     def lower_output_input_ops(self, op: Operation, rewriter):
         if not isinstance(op, linked_bf.OutputOp) and not isinstance(
@@ -161,13 +167,10 @@ class _Patterns:
         )
 
 
-def LowerLinkedToBuiltinBfPass(op: Operation, pass_):
+def LowerLinkedToBuiltinBfPass(op: OpView, pass_):
     """
     A pass for lowering operations in the linked dialect to built-in dialects.
     """
-    MEMORY_SIZE = 1 << 15
-    MEMORY_TYPE = builtin.IntegerType.get_signless(8)
-
     assert isinstance(op.regions[0].blocks[0].operations[0], func.FuncOp)
 
     with InsertionPoint.at_block_begin(
@@ -175,14 +178,14 @@ def LowerLinkedToBuiltinBfPass(op: Operation, pass_):
     ):
         const_zero = arith.ConstantOp(builtin.IndexType.get(), 0)
         const_one = arith.ConstantOp(builtin.IndexType.get(), 1)
-        const_zero_ui8 = arith.ConstantOp(MEMORY_TYPE, 0)
-        arith.ConstantOp(MEMORY_TYPE, 1)
+        const_zero_ui8 = arith.ConstantOp(MEMORY_TYPE(), 0)
+        arith.ConstantOp(MEMORY_TYPE(), 1)
         const_index_mask = arith.ConstantOp(builtin.IndexType.get(), MEMORY_SIZE - 1)
         const_size = arith.ConstantOp(builtin.IndexType.get(), MEMORY_SIZE)
         memref_op = memref.AllocOp(
             builtin.MemRefType.get(
                 [MEMORY_SIZE],
-                MEMORY_TYPE,
+                MEMORY_TYPE(),
             ),
             [],
             [],
