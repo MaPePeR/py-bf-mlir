@@ -13,6 +13,7 @@ from .dialects.linked_brainfuck import LinkedBrainFuck
 from .gen_mlir import GenMLIR
 from .parser import BrainfuckParser
 from .rewrites.lower_free_to_linked_bf import LowerFreeToLinkedBfPass
+from .rewrites.lower_linked_to_builtin import LowerLinkedToBuiltinBfPass
 
 
 def main(
@@ -45,8 +46,7 @@ def main(
         if target == "linked" or target == "builtin":
             pm.add(LowerFreeToLinkedBfPass)
         if target == "builtin":
-            # LowerLinkedToBuiltinBfPass().apply(ctx, gen.module)
-            pass
+            pm.add(LowerLinkedToBuiltinBfPass)
         pm.run(gen.module.operation)
 
     output.write(str(gen.module))

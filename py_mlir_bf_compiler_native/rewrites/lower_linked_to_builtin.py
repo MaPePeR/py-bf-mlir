@@ -1,39 +1,36 @@
-from xdsl.builder import ImplicitBuilder
-from xdsl.context import Context
-from xdsl.dialects import arith, builtin, func, llvm, memref, scf
-from xdsl.dialects.builtin import ModuleOp
-from xdsl.ir import Block, Region, SSAValue
-from xdsl.passes import ModulePass
-from xdsl.pattern_rewriter import (
-    GreedyRewritePatternApplier,
+from mlir.dialects import arith, builtin, func, llvm, memref, scf
+from mlir.ir import InsertionPoint, Operation
+from mlir.rewrite import (
     PatternRewriter,
-    PatternRewriteWalker,
-    RewritePattern,
-    op_type_rewrite_pattern,
+    RewritePatternSet,
+    apply_patterns_and_fold_greedily,
 )
-from xdsl.rewriter import InsertPoint, Rewriter
 
 from ..dialects import linked_brainfuck as linked_bf
 
-MEMORY_SIZE = 1 << 15
-MEMORY_TYPE = builtin.IntegerType(8, builtin.Signedness.SIGNLESS)
 
+class _Patterns:
 
-class MoveOpLowering(RewritePattern):
-    def __init__(self, const_one, const_index_mask) -> None:
+    def __init__(self, const_one, const_index_mask, memref) -> None:
         self.const_one = const_one
         self.const_size = const_index_mask
+        self.memref = memref
 
-    @op_type_rewrite_pattern
-    def match_and_rewrite(
+    def getPatternSet(self):
+        set = RewritePatternSet()
+        set.add(Operation.create("bf_linked.left"), self.lower_move_ops)
+        set.add(Operation.create("bf_linked.right"), self.lower_move_ops)
+        return set.freeze()
+
+    def lower_move_ops(
         self,
-        op: linked_bf.MoveLeftOp | linked_bf.MoveRightOp,
-        rewriter: PatternRewriter,
+        op: Operation,
+        rewriter,
     ):
-        if isinstance(op, linked_bf.MoveLeftOp):
-            direction_op = arith.SubiOp
-        elif isinstance(op, linked_bf.MoveRightOp):
-            direction_op = arith.AddiOp
+        if op.name == "bf_linked.left":
+            direction_op = arith.SubIOp
+        elif op.name == "bf_linked.right":
+            direction_op = arith.AddIOp
         else:
             raise AssertionError("op was not of the expected type.")
         rewriter.replace_matched_op(
@@ -44,17 +41,10 @@ class MoveOpLowering(RewritePattern):
             [and_op.result],
         )
 
-
-class IncDecOpLowering(RewritePattern):
-    def __init__(self, const_one, memref: SSAValue) -> None:
-        self.const_one = const_one
-        self.memref = memref
-
-    @op_type_rewrite_pattern
-    def match_and_rewrite(
+    def lower_inc_dec_ops(
         self,
-        op: linked_bf.IncrementOp | linked_bf.DecrementOp,
-        rewriter: PatternRewriter,
+        op: Operation,
+        rewriter,
     ):
         match op:
             case linked_bf.IncrementOp():
@@ -69,7 +59,7 @@ class IncDecOpLowering(RewritePattern):
                     operands=[self.memref, op.operands[0]], result_types=[MEMORY_TYPE]
                 ),
                 change_op := new_op(
-                    load_op.results[0], self.const_one.result, MEMORY_TYPE
+                    load_op.results[0], self.const_one_ui8.result, MEMORY_TYPE
                 ),
                 store_op := memref.StoreOp(
                     operands=[change_op.result, self.memref, op.operands[0]]
@@ -78,16 +68,10 @@ class IncDecOpLowering(RewritePattern):
             [],
         )
 
-
-class LoopOpLowering(RewritePattern):
-    def __init__(self, memref: SSAValue) -> None:
-        self.memref = memref
-
-    @op_type_rewrite_pattern
-    def match_and_rewrite(
+    def lower_loop_op(
         self,
-        op: linked_bf.LoopOp,
-        rewriter: PatternRewriter,
+        op: Operation,
+        rewriter,
     ):
         while_op = scf.WhileOp(
             [op.index],
@@ -106,25 +90,14 @@ class LoopOpLowering(RewritePattern):
 
         rewriter.replace_matched_op(while_op)
 
-
-class LoopEndOpLowering(RewritePattern):
-    @op_type_rewrite_pattern
-    def match_and_rewrite(
+    def lower_loop_end_op(
         self,
-        op: linked_bf.LoopEndOp,
-        rewriter: PatternRewriter,
+        op: Operation,
+        rewriter,
     ):
         rewriter.replace_matched_op(scf.YieldOp(op.index))
 
-
-class OutputInputOpLowering(RewritePattern):
-    def __init__(self, memref: SSAValue) -> None:
-        self.memref = memref
-
-    @op_type_rewrite_pattern
-    def match_and_rewrite(
-        self, op: linked_bf.OutputOp | linked_bf.InputOp, rewriter: PatternRewriter
-    ):
+    def lower_output_input_ops(self, op: Operation, rewriter):
         if not isinstance(op, linked_bf.OutputOp) and not isinstance(
             op, linked_bf.InputOp
         ):
@@ -184,78 +157,45 @@ class OutputInputOpLowering(RewritePattern):
         )
 
 
-class LowerLinkedToBuiltinBfPass(ModulePass):
+def LowerLinkedToBuiltinBfPass(op: Operation, pass_):
     """
-    A pass for lowering operations in the Toy dialect to built-in dialects.
+    A pass for lowering operations in the linked dialect to built-in dialects.
     """
+    MEMORY_SIZE = 1 << 15
+    MEMORY_TYPE = builtin.IntegerType.get_signless(8)
 
-    name = "lower-linked-to-builtin"
+    assert isinstance(op.regions[0].blocks[0].operations[0], func.FuncOp)
 
-    def apply(self, ctx: Context, op: ModuleOp) -> None:
-        assert isinstance(op.body.block.first_op, func.FuncOp)
-
-        init_zero_block = Block([], arg_types=[linked_bf.PositionType()])
-
-        Rewriter.insert_op(
-            [
-                const_zero := arith.ConstantOp(
-                    builtin.IntegerAttr(0, linked_bf.PositionType())
-                ),
-                const_one := arith.ConstantOp(
-                    builtin.IntegerAttr(1, linked_bf.PositionType())
-                ),
-                const_zero_ui8 := arith.ConstantOp(
-                    builtin.IntegerAttr(0, MEMORY_TYPE),
-                ),
-                const_one_ui8 := arith.ConstantOp(
-                    builtin.IntegerAttr(1, MEMORY_TYPE),
-                ),
-                const_index_mask := arith.ConstantOp(
-                    builtin.IntegerAttr(MEMORY_SIZE - 1, linked_bf.PositionType())
-                ),
-                const_size := arith.ConstantOp(
-                    builtin.IntegerAttr(MEMORY_SIZE, linked_bf.PositionType())
-                ),
-                memref_op := memref.AllocOp(
-                    [], [], builtin.MemRefType(MEMORY_TYPE, [MEMORY_SIZE])
-                ),
-                scf.ForOp(
-                    const_zero.result,
-                    const_size.result,
-                    const_one.result,
-                    [],
-                    init_zero_block,
-                ),
-            ],
-            InsertPoint.at_start(op.body.block.first_op.body.block),
-        )
-
-        init_zero_block.add_ops(
-            [
-                memref.StoreOp(
-                    operands=[
-                        const_zero_ui8.result,
-                        memref_op.results[0],
-                        init_zero_block.args[0],
-                    ]
-                ),
-                scf.YieldOp(),
-            ]
-        )
-
-        const_one.result.name_hint = "const_one"
-        const_one_ui8.result.name_hint = "const_one_ui8"
-        const_index_mask.result.name_hint = "index_mask"
-        const_size.result.name_hint = "const_size"
-        memref_op.results[0].name_hint = "memory"
-        PatternRewriteWalker(
-            GreedyRewritePatternApplier(
-                [
-                    MoveOpLowering(const_one, const_index_mask),
-                    IncDecOpLowering(const_one_ui8, memref_op.results[0]),
-                    LoopOpLowering(memref_op.results[0]),
-                    LoopEndOpLowering(),
-                    OutputInputOpLowering(memref_op.results[0]),
-                ]
+    with InsertionPoint.at_block_begin(
+        op.regions[0].blocks[0].operations[0].regions[0].blocks[0]
+    ):
+        const_zero = arith.ConstantOp(builtin.IndexType.get(), 0)
+        const_one = arith.ConstantOp(builtin.IndexType.get(), 1)
+        const_zero_ui8 = arith.ConstantOp(MEMORY_TYPE, 0)
+        arith.ConstantOp(MEMORY_TYPE, 1)
+        const_index_mask = arith.ConstantOp(builtin.IndexType.get(), MEMORY_SIZE - 1)
+        const_size = arith.ConstantOp(builtin.IndexType.get(), MEMORY_SIZE)
+        memref_op = memref.AllocOp(
+            builtin.MemRefType.get(
+                [MEMORY_SIZE],
+                MEMORY_TYPE,
             ),
-        ).rewrite_module(op)
+            [],
+            [],
+        )
+
+        init_zero_for = scf.ForOp(
+            const_zero.result,
+            const_size.result,
+            const_one.result,
+        )
+        with InsertionPoint(init_zero_block := init_zero_for.regions[0].blocks[0]):
+            memref.StoreOp(
+                const_zero_ui8.result,
+                memref_op.results[0],
+                [init_zero_block.arguments[0]],
+            )
+            scf.YieldOp([])
+
+    patterns = _Patterns(const_one, const_index_mask, memref_op).getPatternSet()
+    apply_patterns_and_fold_greedily(op, patterns)
