@@ -48,6 +48,8 @@ def main(
         if target == "builtin" or target == "low_builtin":
             pm.add(LowerLinkedToBuiltinBfPass)
         if target == "low_builtin":
+            pm.run(gen.module.operation)
+            pm = PassManager()
             pm.add(
                 ",".join(
                     [
