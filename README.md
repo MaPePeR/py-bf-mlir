@@ -3,7 +3,7 @@
 This project is an experiment to implement a Compiler using [MLIR](https://mlir.llvm.org/).
 [Brainfuck](https://en.wikipedia.org/wiki/Brainfuck) was choosen as a programming language for its simplicity.
 
-To keep more true to the stack I would use for a real programming language a [Lark](https://github.com/lark-parser/lark) based [grammar](py_mlir_brainfuck_compiler/brainfuck.lark) is used to lex and parse the Brainfuck code. To create the MLIR i tried both, the [native LLVM MLIR Python](https://mlir.llvm.org/docs/Bindings/Python/) bindings, and the Python [xDSL](https://github.com/xdslproject/xdsl/) package. This branch is the version using the xDSL package.
+To keep more true to the stack I would use for a real programming language a [Lark](https://github.com/lark-parser/lark) based [grammar](py_mlir_brainfuck_compiler/brainfuck.lark) is used to lex and parse the Brainfuck code. To create the MLIR i tried both, the [native LLVM MLIR Python](https://mlir.llvm.org/docs/Bindings/Python/) bindings, and the Python [xDSL](https://github.com/xdslproject/xdsl/) package.
 
 ## Syntax Tree
 So a simple Brainfuck code like `>+>+[<]` is parsed as this Syntax Tree:
@@ -104,7 +104,7 @@ builtin.module {
 }
 ```
 
-This MLIR can then be further lowered/optimized using the `mlir-opt` tool, be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the [Makefile](Makefile), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
+This MLIR can then be further lowered/optimized using the `mlir-opt` tool or the necessary passes can directly happen in Python, be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the [Makefile](Makefile), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
 
 ## Devcontainer
 
