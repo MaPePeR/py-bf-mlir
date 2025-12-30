@@ -38,7 +38,7 @@ def main(
         irdl.load_dialects(FreeBrainFuck())
         if target != "free":
             irdl.load_dialects(LinkedBrainFuck())
-        gen = GenMLIR()
+        gen = GenMLIR(str(sourcefile))
         gen.gen_main_func(ast.children)
 
         pm = PassManager()

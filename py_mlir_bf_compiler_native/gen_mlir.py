@@ -9,9 +9,11 @@ AST: TypeAlias = list[lark.Tree | lark.Token]
 
 class GenMLIR:
     module: Module
+    filename: str
 
-    def __init__(self) -> None:
+    def __init__(self, filename) -> None:
         self.module = Module.create()
+        self.filename = filename
 
     def gen_main_func(self, ast: AST):
         with InsertionPoint(self.module.body):
@@ -27,12 +29,41 @@ class GenMLIR:
         for op in ast:
             match op:
                 case lark.Token():
-                    loc = Location.file("input.bf", op.line, op.column)
+                    if op.line is not None and op.column is not None:
+                        loc = Location.file(self.filename, op.line, op.column)
+                    else:
+                        loc = Location.unknown()
                 case lark.Tree(
                     lark.Token("RULE", "loop"),
-                    [lark.Token("LOOP_START") as loop_tok, *_, lark.Token("LOOP_END")],
+                    [
+                        lark.Token("LOOP_START") as loop_start_tok,
+                        *_,
+                        lark.Token("LOOP_END") as loop_end_tok,
+                    ],
                 ):
-                    loc = Location.file("input.bf", loop_tok.line, loop_tok.column)
+                    if (
+                        loop_start_tok.line is not None
+                        and loop_start_tok.column is not None
+                    ):
+                        if (
+                            loop_end_tok.line is not None
+                            and loop_end_tok.column is not None
+                        ):
+                            loc = Location.file(
+                                self.filename,
+                                loop_start_tok.line,
+                                loop_start_tok.column,
+                                loop_end_tok.line,
+                                loop_end_tok.column,
+                            )
+                        else:
+                            loc = Location.file(
+                                self.filename,
+                                loop_start_tok.line,
+                                loop_start_tok.column,
+                            )
+                    else:
+                        loc = Location.unknown()
                 case other:
                     raise Exception(f"Invalid Element in AST: {other!r}")
             with loc:
