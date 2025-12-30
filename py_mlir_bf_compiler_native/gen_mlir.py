@@ -28,44 +28,29 @@ class GenMLIR:
     def gen_instructions(self, ast: AST):
         for op in ast:
             match op:
-                case lark.Token():
-                    if op.line is not None and op.column is not None:
-                        loc = Location.file(self.filename, op.line, op.column)
-                    else:
-                        loc = Location.unknown()
+                case lark.Token(line=int() as line, column=int() as column):
+                    loc = Location.file(self.filename, line, column)
                 case lark.Tree(
                     lark.Token("RULE", "loop"),
                     [
-                        lark.Token("LOOP_START") as loop_start_tok,
+                        lark.Token(
+                            "LOOP_START",
+                            line=int() as start_line,
+                            column=int() as start_column,
+                        ),
                         *_,
-                        lark.Token("LOOP_END") as loop_end_tok,
+                        lark.Token(
+                            "LOOP_END",
+                            line=int() as end_line,
+                            column=int() as end_column,
+                        ),
                     ],
                 ):
-                    if (
-                        loop_start_tok.line is not None
-                        and loop_start_tok.column is not None
-                    ):
-                        if (
-                            loop_end_tok.line is not None
-                            and loop_end_tok.column is not None
-                        ):
-                            loc = Location.file(
-                                self.filename,
-                                loop_start_tok.line,
-                                loop_start_tok.column,
-                                loop_end_tok.line,
-                                loop_end_tok.column,
-                            )
-                        else:
-                            loc = Location.file(
-                                self.filename,
-                                loop_start_tok.line,
-                                loop_start_tok.column,
-                            )
-                    else:
-                        loc = Location.unknown()
-                case other:
-                    raise Exception(f"Invalid Element in AST: {other!r}")
+                    loc = Location.file(
+                        self.filename, start_line, start_column, end_line, end_column
+                    )
+                case _:
+                    loc = Location.unknown()
             with loc:
                 match op:
                     case lark.Token("MOVE_LEFT"):
