@@ -20,6 +20,7 @@ def main(
     sourcefile: pathlib.Path,
     target: typing.Literal["ast", "free", "linked", "builtin", "low_builtin"],
     output: typing.TextIO,
+    debug: bool,
 ):
     parser = BrainfuckParser()
 
@@ -69,8 +70,7 @@ def main(
 
         pm.run(gen.module.operation)
 
-    output.write(str(gen.module))
-    # gen.module.operation.print(enable_debug_info=True)
+    gen.module.operation.print(enable_debug_info=debug, file=output)
     gen.module.operation.verify()
 
 
@@ -97,13 +97,20 @@ parser.add_argument(
     help="Output destination (default: stdout)",
 )
 
+parser.add_argument(
+    "--debug",
+    "-d",
+    action="store_true",
+    help="Specify to also output debug information",
+)
+
 args = parser.parse_args()
 output = sys.stdout
 if args.output:
     assert isinstance(args.output, pathlib.Path)
     output = args.output.open("w")
 try:
-    ret = main(args.source, args.target, output)
+    ret = main(args.source, args.target, output, args.debug)
 finally:
     output.close()
 sys.exit(ret)
