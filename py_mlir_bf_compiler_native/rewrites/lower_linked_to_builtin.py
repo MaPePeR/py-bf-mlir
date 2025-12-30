@@ -109,32 +109,22 @@ class _Patterns:
         if op.name not in ("bf_linked.output", "bf_linked.input"):
             raise AssertionError("Invalid op")
 
-        memref_llvm_struct = llvm.StructType.get_literal(
-            [
-                llvm.PointerType.get(),
-                llvm.PointerType.get(),
-                builtin.IntegerType.get_signless(64),
-                builtin.Type.parse("!llvm.array<1 x i64>"),
-                builtin.Type.parse("!llvm.array<1 x i64>"),
-            ]
-        )
         with rewriter.ip, op.location:
             zero = arith.ConstantOp(builtin.IntegerType.get_signless(64), 0)
             one = arith.ConstantOp(builtin.IntegerType.get_signless(64), 1)
 
-            cast_memref_op = builtin.UnrealizedConversionCastOp(
-                inputs=[self.memref], outputs=[memref_llvm_struct]
-            )
             cast_index_op = builtin.UnrealizedConversionCastOp(
                 inputs=[op.operands[0]], outputs=[builtin.IntegerType.get_signless(64)]
             )
-            val_op = llvm.ExtractValueOp(
-                position=[1],
-                container=cast_memref_op.results[0],
-                res=llvm.PointerType.get(),
+            ptr_type = builtin.Type.parse("!ptr.ptr<#ptr.generic_space>")
+            ptr = Operation.create(
+                "ptr.to_ptr", results=[ptr_type], operands=[self.memref.result]
+            )
+            cast_ptr_op = builtin.UnrealizedConversionCastOp(
+                inputs=[ptr], outputs=[llvm.PointerType.get()]
             )
             elementptr_op = llvm.GEPOp(
-                base=val_op.results[0],
+                base=cast_ptr_op.result,
                 res=llvm.PointerType.get(),
                 dynamicIndices=[cast_index_op.results[0]],
                 rawConstantIndices=builtin.DenseI32ArrayAttr.get([-2147483648]),
@@ -179,6 +169,7 @@ def LowerLinkedToBuiltinBfPass(op: OpView, pass_):
             builtin.MemRefType.get(
                 [MEMORY_SIZE],
                 MEMORY_TYPE(),
+                memory_space=builtin.Attribute.parse("#ptr.generic_space"),
             ),
             [],
             [],

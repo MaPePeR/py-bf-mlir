@@ -58,6 +58,7 @@ def main(
                         "convert-cf-to-llvm",
                         "convert-func-to-llvm",
                         "convert-arith-to-llvm",
+                        "convert-to-llvm",
                         "expand-strided-metadata",
                         "normalize-memrefs",
                         "memref-expand",
