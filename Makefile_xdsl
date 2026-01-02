@@ -2,7 +2,7 @@
 .SECONDARY:
 
 %.mlir :: %.bf
-	python -m py_mlir_brainfuck_compiler $< -o $@
+	python -m py_mlir_bf_compiler_xdsl $< -o $@
 
 %.opt.mlir : %.mlir
 	mlir-opt --convert-scf-to-cf --convert-cf-to-llvm --convert-func-to-llvm \
