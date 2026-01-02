@@ -104,7 +104,7 @@ builtin.module {
 }
 ```
 
-This MLIR can then be further lowered/optimized using the `mlir-opt` tool or the necessary passes can directly triggered from Python with the native bindings, be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the Makefiles ([Makefile_xdsl](Makefile_xdsl), [Makefile_native](Makefile_xdsl)), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
+This MLIR can then be further lowered/optimized using the `mlir-opt` tool. With the native bindings the necessary passes can be triggered from Python itself. Afterwards the optimized MLIR can be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the Makefiles ([Makefile_xdsl](Makefile_xdsl), [Makefile_native](Makefile_xdsl)), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
 
 ## Devcontainer
 
