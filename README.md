@@ -43,7 +43,7 @@ builtin.module {
 In a [first lowering step](py_mlir_brainfuck_compiler/rewrites/lower_free_to_linked_bf.py) this "free" dialect is lowered to the ["linked" dialect](py_mlir_brainfuck_compiler/dialects/linked_brainfuck.py).
 In this second dialect every Operation that uses the memory index receives the index as an operand. Every operation, that modifies the index will produce a new index as a result. (This lowering was accomplished with a custom Tree-Walk that seems to be unconvential for xDSL?)
 
-```
+```mlir
 builtin.module {
   func.func @main() {
     %0 = arith.constant 0 : index
@@ -64,9 +64,10 @@ builtin.module {
 ## Lowering to builtins
 Using a [second lowering step](py_mlir_brainfuck_compiler/rewrites/lower_linked_to_builtin.py) these linked ops are converted to the builtin dialects. Namely, `arith`, `scf`, and `memref`. The output and input operands (not displayed here, though arguably the most interesting) are converted to `llvm.inline_asm` to get a read/write syscall.
 
-```
+```mlir
 builtin.module {
   func.func @main() {
+    // init
     %0 = arith.constant 0 : index
     %const_one = arith.constant 1 : index
     %1 = arith.constant 0 : i8
@@ -78,16 +79,21 @@ builtin.module {
       memref.store %1, %memory[%2] : memref<32768xi8>
     }
     %3 = arith.constant 0 : index
+    // >
     %4 = arith.addi %3, %const_one : index
     %5 = arith.andi %4, %index_mask : index
+    // +
     %6 = memref.load %memory[%5] : memref<32768xi8>
     %7 = arith.addi %6, %const_one_ui8 : i8
     memref.store %7, %memory[%5] : memref<32768xi8>
+    // >
     %8 = arith.addi %5, %const_one : index
     %9 = arith.andi %8, %index_mask : index
+    // +
     %10 = memref.load %memory[%9] : memref<32768xi8>
     %11 = arith.addi %10, %const_one_ui8 : i8
     memref.store %11, %memory[%9] : memref<32768xi8>
+    // [ ... ]
     %12 = scf.while (%13 = %9) : (index) -> index {
       %14 = memref.load %memory[%13] : memref<32768xi8>
       %15 = arith.constant 0 : i8
@@ -95,6 +101,7 @@ builtin.module {
       scf.condition(%16) %13 : index
     } do {
     ^bb0(%17 : index):
+      // <
       %18 = arith.subi %17, %const_one : index
       %19 = arith.andi %18, %index_mask : index
       scf.yield %19 : index
