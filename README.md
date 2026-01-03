@@ -21,7 +21,7 @@ Tree(Token('RULE', 'start'), [
 ```
 
 ## Initial "free" Dialect
-This Tree is then [converted](py_mlir_brainfuck_compiler/gen_mlir.py) to the [first MLIR dialect](py_mlir_brainfuck_compiler/dialects/free_brainfuck.py).
+This Tree is then converted ([native](py_mlir_bf_compiler_native/gen_mlir.py), [xDSL](py_mlir_bf_compiler_xdsl/gen_mlir.py)) to the first MLIR dialect ([native](py_mlir_bf_compiler_native/dialects/free_brainfuck.py), [xDSL](py_mlir_bf_compiler_xdsl/dialects/free_brainfuck.py)).
 This first dialect does not contain any SSA values, yet, but mimics the syntax tree very closely:
 
 ```mlir
@@ -40,7 +40,7 @@ builtin.module {
 ```
 
 ## Lowering to linked Dialect
-In a [first lowering step](py_mlir_brainfuck_compiler/rewrites/lower_free_to_linked_bf.py) this "free" dialect is lowered to the ["linked" dialect](py_mlir_brainfuck_compiler/dialects/linked_brainfuck.py).
+In a first lowering step ([native](py_mlir_bf_compiler_native/rewrites/lower_free_to_linked_bf.py), [xDSL](py_mlir_bf_compiler_xdsl/rewrites/lower_free_to_linked_bf.py)) this "free" dialect is lowered to the "linked" dialect ([native](py_mlir_bf_compiler_native/dialects/linked_brainfuck.py), [xDSL](py_mlir_bf_compiler_xdsl/dialects/linked_brainfuck.py)).
 In this second dialect every Operation that uses the memory index receives the index as an operand. Every operation, that modifies the index will produce a new index as a result. (This lowering was accomplished with a custom Tree-Walk that seems to be unconvential for xDSL?)
 
 ```mlir
@@ -62,7 +62,7 @@ builtin.module {
 ```
 
 ## Lowering to builtins
-Using a [second lowering step](py_mlir_brainfuck_compiler/rewrites/lower_linked_to_builtin.py) these linked ops are converted to the builtin dialects. Namely, `arith`, `scf`, and `memref`. The output and input operands (not displayed here, though arguably the most interesting) are converted to `llvm.inline_asm` to get a read/write syscall.
+Using a second lowering step ([native](py_mlir_bf_compiler_native/rewrites/lower_linked_to_builtin.py), [xDSL](py_mlir_bf_compiler_xdsl/rewrites/lower_linked_to_builtin.py)) these linked ops are converted to the builtin dialects. Namely, `arith`, `scf`, and `memref`. The output and input operands (not displayed here, though arguably the most interesting) are converted to `llvm.inline_asm` to get a read/write syscall.
 
 ```mlir
 builtin.module {
@@ -111,7 +111,7 @@ builtin.module {
 }
 ```
 
-This MLIR can then be further lowered/optimized using the `mlir-opt` tool. With the native bindings the necessary passes can be triggered from Python itself. Afterwards the optimized MLIR can be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the Makefiles ([Makefile_xdsl](Makefile_xdsl), [Makefile_native](Makefile_xdsl)), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
+This MLIR can then be further lowered/optimized using the `mlir-opt` tool. With the native bindings the necessary passes can be triggered from Python itself. Afterwards the optimized MLIR can be translated to LLVM-IR with `mlir-translate`, converted to assembly with `llc` and then compiled using `clang`. See the Makefiles ([native](Makefile_native), [xDSL](Makefile_xdsl)), that can be used to compile `.bf` code to `.out` exceutables, for the exact commands.
 
 ## Devcontainer
 
