@@ -153,14 +153,13 @@ class OutputInputOpLowering(RewritePattern):
                 MEMORY_TYPE,
                 ssa_indices=[cast_index_op.results[0]],
             )
-            ptr_to_int_op = llvm.PtrToIntOp(elementptr_op.result)
             llvm.InlineAsmOp(
                 "syscall",
                 "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
                 (
-                    [one, one, ptr_to_int_op.results[0], one]
+                    [one, one, elementptr_op.results[0], one]
                     if isinstance(op, linked_bf.OutputOp)
-                    else [zero, zero, ptr_to_int_op.results[0], one]
+                    else [zero, zero, elementptr_op.results[0], one]
                 ),
                 has_side_effects=True,
                 res_types=[builtin.i64],

@@ -132,18 +132,14 @@ class _Patterns:
                 noWrapFlags=llvm.GEPNoWrapFlags.none,
             )
 
-            ptr_to_int_op = llvm.PtrToIntOp(
-                res=builtin.IntegerType.get_signless(64), arg=elementptr_op.result
-            )
-
             llvm.InlineAsmOp(
                 res=builtin.IntegerType.get_signless(64),
                 asm_string="syscall",
                 constraints="={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}",
                 operands_=(
-                    [one, one, ptr_to_int_op.results[0], one]
+                    [one, one, elementptr_op.results[0], one]
                     if op.name == "bf_linked.output"
-                    else [zero, zero, ptr_to_int_op.results[0], one]
+                    else [zero, zero, elementptr_op.results[0], one]
                 ),
                 has_side_effects=True,
             )
