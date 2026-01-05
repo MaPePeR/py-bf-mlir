@@ -5,7 +5,8 @@ import typing
 from enum import IntEnum
 
 import lark
-from mlir.dialects import irdl
+from mlir.dialects import builtin, func, irdl
+from mlir.execution_engine import ExecutionEngine
 from mlir.ir import Context, Location
 from mlir.passmanager import PassManager
 
@@ -51,6 +52,13 @@ def main(
             irdl.load_dialects(LinkedBrainFuck())
         gen = GenMLIR(str(sourcefile))
         gen.gen_main_func(ast.children)
+        if target == Target.interpret:
+            assert isinstance(
+                gen.module.operation.regions[0].blocks[0].operations[0], func.FuncOp
+            )
+            gen.module.operation.regions[0].blocks[0].operations[0].attributes[
+                "llvm.emit_c_interface"
+            ] = builtin.UnitAttr.get()
 
         pm = PassManager()
         pm.enable_verifier(False)
@@ -81,8 +89,12 @@ def main(
 
         pm.run(gen.module.operation)
 
-    gen.module.operation.print(enable_debug_info=debug, file=output)
-    gen.module.operation.verify()
+    if target == Target.interpret:
+        engine = ExecutionEngine(gen.module)
+        engine.invoke("main")
+    else:
+        gen.module.operation.print(enable_debug_info=debug, file=output)
+        gen.module.operation.verify()
 
 
 parser = argparse.ArgumentParser(description="Process Toy file")
