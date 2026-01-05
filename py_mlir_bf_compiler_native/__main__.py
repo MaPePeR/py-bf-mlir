@@ -2,6 +2,7 @@ import argparse
 import pathlib
 import sys
 import typing
+from enum import IntEnum
 
 import lark
 from mlir.dialects import irdl
@@ -16,9 +17,18 @@ from .rewrites.lower_free_to_linked_bf import LowerFreeToLinkedBfPass
 from .rewrites.lower_linked_to_builtin import LowerLinkedToBuiltinBfPass
 
 
+class Target(IntEnum):
+    ast = 0
+    free = 1
+    linked = 2
+    builtin = 3
+    low_builtin = 4
+    interpret = 5
+
+
 def main(
     sourcefile: pathlib.Path,
-    target: typing.Literal["ast", "free", "linked", "builtin", "low_builtin"],
+    target: Target,
     output: typing.TextIO,
     debug: bool,
 ):
@@ -44,11 +54,11 @@ def main(
 
         pm = PassManager()
         pm.enable_verifier(False)
-        if target == "linked" or target == "builtin" or target == "low_builtin":
+        if target >= Target.linked:
             pm.add(LowerFreeToLinkedBfPass)
-        if target == "builtin" or target == "low_builtin":
+        if target >= Target.builtin:
             pm.add(LowerLinkedToBuiltinBfPass)
-        if target == "low_builtin":
+        if target >= Target.low_builtin:
             pm.run(gen.module.operation)
             pm = PassManager()
             pm.add(
@@ -80,13 +90,7 @@ parser.add_argument("source", type=pathlib.Path, help="Brainfuck Source File")
 parser.add_argument(
     "--target",
     dest="target",
-    choices=[
-        "ast",
-        "free",
-        "linked",
-        "builtin",
-        "low_builtin",
-    ],
+    choices=[target.name for target in Target],
     default="builtin",
     help="What MLIR to generate (default: builtin)",
 )
@@ -111,7 +115,7 @@ if args.output:
     assert isinstance(args.output, pathlib.Path)
     output = args.output.open("w")
 try:
-    ret = main(args.source, args.target, output, args.debug)
+    ret = main(args.source, Target[args.target], output, args.debug)
 finally:
     output.close()
 sys.exit(ret)
